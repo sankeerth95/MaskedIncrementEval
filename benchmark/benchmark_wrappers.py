@@ -1,5 +1,5 @@
 from benchmark.model_getter import ModelGetter
-from benchmark.model_handlers import IncrModelHandler
+from benchmark.model_handlers import IncrModelHandler, BaselineModelhandler
 from benchmark.input_handlers import IncrDatasetInputHandler, RandomInputHandler, SparseRandomInputHandler, StructurallySparseRandomInputHandlerNCHW
 from benchmark.operations import Conv2dBaseline
 from benchmark.ops_benchmark import BenchmarkNetwork
@@ -12,6 +12,15 @@ def benchmark_e2vid_incr(pth=None):
     model_h = IncrModelHandler(op, prev_x_input=input_h.prev_x)
     benchmark = BenchmarkNetwork(input_h, model_h)
     return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
+
+def benchmark_e2vid(pth=None):
+    device = 'cuda'
+    input_h = IncrDatasetInputHandler(start_index=10, device=device)
+    op = ModelGetter.get_e2vid_model(pth).to(device)    
+    model_h = BaselineModelhandler(op)
+    benchmark = BenchmarkNetwork(input_h, model_h)
+    return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
+
 
 def benchmark_conv(in_shape, shape=(32, 64), k=3, stride=1):
     device = 'cuda'

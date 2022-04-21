@@ -14,9 +14,11 @@ class ModelGetter:
         return load_model_incr(pth)
 
     @staticmethod
-    def get_e2vid_model() -> E2VIDRecurrent:
+    def get_e2vid_model(pth=None) -> E2VIDRecurrent:
         from ev_projs.rpg_e2depth.utils.loading_utils import load_model
-        return load_model('/home/sankeerth/ev/experiments/pretrained_models/E2DEPTH_si_grad_loss_mixed.pth.tar')
+        if pth is None:
+            pth = '/home/sankeerth/ev/experiments/pretrained_models/E2DEPTH_si_grad_loss_mixed.pth.tar'
+        return load_model(pth)
 
     @staticmethod
     def get_dense_conv() -> nn.Conv2d:

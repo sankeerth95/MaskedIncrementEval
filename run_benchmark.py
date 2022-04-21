@@ -71,6 +71,7 @@ if __name__ == '__main__':
     pth = None
     # pth = '/home/sankeerth/tmp/e2depth_train_test_1/checkpoint-epoch001-loss-0.0000.pth.tar'
     print(benchmark_e2vid_incr(pth))
+    print(benchmark_e2vid(pth))
 
     # ret = benchmark_conv(in_shape = (1, 256, 346, 260), shape=[256, 512])
     # print(ret)

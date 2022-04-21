@@ -24,7 +24,7 @@ class BaselineModelhandler(ModelHandler):
         self.op.eval()
 
     def run_once(self, input_sample):
-        return self.op(input_sample)
+        return self.op(input_sample, None)
 
 
 class IncrModelHandler(ModelHandler):

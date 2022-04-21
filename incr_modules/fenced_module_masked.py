@@ -6,13 +6,14 @@ from ev_projs.rpg_e2depth.model.model import BaseE2VID
 from .masked_types import Masked, Sp, DenseT, SpOrDense
 
 from typing import overload, Union
-import torch.sparse as sparse
+
 
 from metrics.structural_sparsity import field_channel_sparsity
 
 
 k_init = 0.1
 def print_sparsity(x, prefix: str = ""):
+    return
     print(prefix, float(field_channel_sparsity(x, field_size=5, threshold=k_init).cpu().numpy())  )
 
 
