@@ -1,0 +1,3 @@
+[submodule "ev_projs/rpg_e2depth"]
+	path = ev_projs/rpg_e2depth
+	url = https://github.com/sankeerth95/rpg_e2depth.git
