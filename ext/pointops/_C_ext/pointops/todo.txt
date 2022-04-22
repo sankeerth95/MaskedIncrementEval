@@ -1,0 +1,34 @@
+modifications from baseline:
+
+
+
+nonlin op : -----
+        output_incr = self.op(self.reservoir_in.reservoir + x_incr) - self.reservoir_out.reservoir
+        output_incr = self.op(self.reservoir_in.reservoir + x_incr)
+
+
+incr pointwise: -----
+    return x1_incr
+    return x1_incr*x2_incr + x2.reservoir*x1_incr + x1.reservoir*x2_incr
+
+
+kfenced_module: 
+
+
+
+
+accumulate; ----
+
+
+
+
+
+
+
+all of these contribute a lot lot to the total timel: what used to be just 2ms.
+
+
+
+accumulate: different stream, outside critical path?
+
+

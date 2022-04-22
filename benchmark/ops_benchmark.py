@@ -28,8 +28,9 @@ class ProfileHandler:
                 [ '/home/sankeerth/FlameGraph/flamegraph.pl', 
                 '--title', 
                 "{} time_total".format(self.device), 
-                '--countname', 
+                '--countname',
                 "us.", 
+                '--reverse', 
                 '/tmp/profiler_stacks.txt'],
                 stdout=fp
             )

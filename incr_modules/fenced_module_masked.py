@@ -1,3 +1,4 @@
+from re import S
 from shutil import ExecError
 import torch
 import torch.nn as nn
@@ -16,19 +17,37 @@ def print_sparsity(x, prefix: str = ""):
     return
     print(prefix, float(field_channel_sparsity(x, field_size=5, threshold=k_init).cpu().numpy())  )
 
+# singleton class; not the best way but whatev
+class AccumStreamManager:
+
+    def __init__(self):
+        self.s = torch.cuda.Stream()
+    
+    def get_stream(self):
+        return self.s
+
+    instance = None
+    @classmethod
+    def createAccumStream(cls):
+        if cls.instance is None:
+            cls.instance = cls()
+        return cls.instance
+
+
 
 # accumulates inputs: have to make this conditional
 class IncrementReserve:
     def __init__(self, x_init: Union[SpOrDense, None] = None):
+        self.accum_stream = AccumStreamManager.createAccumStream() 
         if x_init == None:
             self.reservoir = None
         else:
             self.reservoir = x_init.clone().detach()
 
     # dense/sparse accumulate accumulate
-    def accumulate(self, incr: Masked) -> DenseT:
-        assert self.reservoir != None
-        self.reservoir += incr
+    def accumulate(self, incr: Masked):
+        with torch.cuda.stream(self.accum_stream.get_stream()):
+            self.reservoir.add_(incr)
 
     def update_reservoir(self, x: torch.Tensor):
         self.reservoir = x.clone().detach() # not in place right now :(
@@ -56,15 +75,11 @@ class KFencedMaskModule(IncrementMaskModule):
         self.k = k
 
     def floor_by_k(self, T: Masked) -> Masked:  # TODO: implement for sparse inputs.
-        if isinstance(T, Sp):
-            raise NotImplementedError
-        elif isinstance(T, DenseT):
-            return (self.k*torch.floor(0.5 + T/self.k))  
-        else:
-            raise ExecError
+        return (self.k*torch.floor(0.5 + T/self.k))  
 
     # accumulate operations: sparsed
     def forward(self, incr: Masked) -> Sp:
+        return incr
         T1 = self.delta.reservoir + incr                    # critical path; could be sparse
         f_delta: Sp = self.floor_by_k(T1)                   # critical path; could be sparse
         self.delta.reservoir = T1 - f_delta                       # out of order; sparse
@@ -78,6 +93,7 @@ class KFencedMaskModule(IncrementMaskModule):
         return x
 
 def IncrPointwiseMultiply(x1_incr: SpOrDense, x1: IncrementReserve, x2_incr, x2: IncrementReserve):
+    return x1_incr
     return x1_incr*x2_incr + x2.reservoir*x1_incr + x1.reservoir*x2_incr
 
 class PointwiseMultiplyIncr(IncrementMaskModule):
@@ -125,7 +141,7 @@ class NonlinearPointOpIncr(IncrementMaskModule):
 
     # need to be replaced with c++ binding
     def _nonlin(self, x_incr):
-        output_incr = self.op(self.reservoir_in.reservoir + x_incr) - self.reservoir_out.reservoir
+        output_incr = self.op(self.reservoir_in.reservoir + x_incr)# - self.reservoir_out.reservoir
         return output_incr
 
 
@@ -146,10 +162,6 @@ class nnLinearIncr(IncrementMaskModule):
 
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
         return F.linear(x, self.linear.weight, self.linear.bias)
-
-
-def output_shape(W, K,P,S ) -> int:
-    return int((W - K + 2*P)/S) + 1
 
 
 def conv2d_from_module(x: Masked, gates: nn.Conv2d, bias=True) -> Masked:
@@ -302,19 +314,11 @@ class ConvLSTMIncr(IncrementMaskModule):
             state_size = tuple([batch_size, self.hidden_size] + list(spatial_size))
             if state_size not in self.zero_tensors_incr:
                 # allocate a tensor with size `spatial_size`, filled with zero (if it has not been allocated already)
+                self.zero_tensors_incr[state_size] = (
+                    torch.zeros(state_size).to(input_incr.device),
+                    torch.zeros(state_size).to(input_incr.device)
+                )
 
-                if isinstance(input_incr, Sp):
-                    self.zero_tensors_incr[state_size] = (
-                        torch.zeros(state_size, device=input_incr.device).to_sparse(),
-                        torch.zeros(state_size, device=input_incr.device).to_sparse(),
-                    )
-                elif isinstance(input_incr, DenseT):
-                    self.zero_tensors_incr[state_size] = (
-                        torch.zeros(state_size).to(input_incr.device),
-                        torch.zeros(state_size).to(input_incr.device)
-                    )
-                else:
-                    raise NotImplementedError
 
             prev_state_incr = self.zero_tensors_incr[state_size]
 
@@ -323,9 +327,8 @@ class ConvLSTMIncr(IncrementMaskModule):
 
         gates_incr = conv2d_from_module(stacked_inputs_incr, self.Gates, bias=False)
         gates_incr = self.kf(gates_incr)
-        # TODO: avoid this
+
         in_incr, rm_incr, o_incr, cg_incr = gates_incr.chunk(4, 1)
-        # in_incr, rm_incr, o_incr, cg_incr = tuple( i.to_sparse() for i in gates_incr.to_dense().chunk(4, 1) )
 
         # set of pointwise nonlinear operations: output is guaranteed to be sparse
         rm_s_incr = self.rm_sigmoid(rm_incr)

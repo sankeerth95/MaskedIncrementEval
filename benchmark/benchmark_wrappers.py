@@ -11,7 +11,7 @@ def benchmark_e2vid_incr(pth=None):
     op = ModelGetter.get_e2vid_incr_model(pth).to(device)    
     model_h = IncrModelHandler(op, prev_x_input=input_h.prev_x)
     benchmark = BenchmarkNetwork(input_h, model_h)
-    return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
+    return benchmark.benchmark(maxiter=40, save_profiler_data=True, print_profiler_data=True)
 
 def benchmark_e2vid(pth=None):
     device = 'cuda'
@@ -19,7 +19,7 @@ def benchmark_e2vid(pth=None):
     op = ModelGetter.get_e2vid_model(pth).to(device)    
     model_h = BaselineModelhandler(op)
     benchmark = BenchmarkNetwork(input_h, model_h)
-    return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
+    return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=True)
 
 
 def benchmark_conv(in_shape, shape=(32, 64), k=3, stride=1):
