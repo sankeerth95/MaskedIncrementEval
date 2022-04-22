@@ -8,14 +8,10 @@
 #include "checks.h"
 
 
-
-
 template <typename scalar_t>
 __device__ __forceinline__ scalar_t activation(scalar_t x) {
     return x < 0.0f ? 0.0f : x; 
 }
-
-
 
 // only works for channel size:
 // first: is it a competetive implementation? benchmark this first;
@@ -24,8 +20,6 @@ __device__ __forceinline__ scalar_t activation(scalar_t x) {
 
 
 // assuems C,H,W format
-// assumes number of threads == 
-// each thread loops across input field;
 template <typename scalar_t, int activation_fn=0, int FIELD_SIZE=3, int C_PER_BLOCK=4, int H_PER_BLOCK=3, int W_PER_BLOCK=3, int WARP_SIZE=32>
 __global__ void activation_increment_kernel(
     scalar_t *__restrict__  X,
@@ -45,14 +39,14 @@ __global__ void activation_increment_kernel(
     int const c_in_start = block_idx/HW_up;
     int const c_in_end = min(X_dim.C, c_in_start + C_PER_BLOCK);
 
-    int const w = W_PER_BLOCK*(block_idx%H_up) + lane_idx%H_PER_BLOCK;
-    int const h = H_PER_BLOCK*(block_idx/H_up) + lane_idx/H_PER_BLOCK;
+    int const w = W_PER_BLOCK*(block_idx%W_up) + lane_idx%W_PER_BLOCK;
+    int const h = H_PER_BLOCK*(block_idx/W_up) + lane_idx/W_PER_BLOCK;
 
     // out of bounds
     if(lane_idx >= H_PER_BLOCK*W_PER_BLOCK || h > X_dim.H || w > X_dim.W)
         return;
 
-    int const px_offs = h*X_dim.H + w;
+    int const px_offs = h*X_dim.W + w;
 
     // for(int i = 0; i < )
     for(int c = c_in_start; c < c_in_end ; c += 1){
@@ -65,7 +59,6 @@ __global__ void activation_increment_kernel(
     }
 }
 
-
 template<typename scalar_t>
 void activation_increment_cuda(
     torch::Tensor &X,
@@ -73,8 +66,7 @@ void activation_increment_cuda(
     torch::Tensor &out_incr  // expect a zero tensor
 ){
 
-    auto Xdim_sizes = X.sizes();
-    auto X_dim = dim(Xdim_sizes);
+    auto X_dim = dim(X.sizes());
 
     int const H_PER_BLOCK=3;
     int const W_PER_BLOCK=3;
@@ -96,7 +88,6 @@ void activation_increment_cuda(
     );
 
     CUDA_CHECK_ERRORS();
-
 }
 
 

@@ -1,10 +1,8 @@
 import torch
+from ._C_ext.pointops.pointops_ext import activation_increment
 
-from ._C_ext.pointops.pointops_ext import pointwise_add
-
-
-def pointwise_incr(X, input_incr):
-    return pointwise_add(X, input_incr.values(), input_incr.indices().int())
-    
-
+def activation_incr(X, input_incr):
+    output_= torch.zeros_like(X)
+    activation_increment(X, input_incr, output_)
+    return output_
 
