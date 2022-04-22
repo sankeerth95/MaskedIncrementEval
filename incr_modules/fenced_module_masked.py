@@ -46,6 +46,7 @@ class IncrementReserve:
 
     # dense/sparse accumulate accumulate
     def accumulate(self, incr: Masked):
+        return
         with torch.cuda.stream(self.accum_stream.get_stream()):
             self.reservoir.add_(incr)
 
@@ -103,13 +104,8 @@ class PointwiseMultiplyIncr(IncrementMaskModule):
         self.x1_res: IncrementReserve = x1res_module # only a reference
         self.x2_res: IncrementReserve = x2res_module # only a reference
 
-    @overload
-    def forward(self, x1_incr: Masked, x2_incr: Masked) -> Masked: ...
 
-    @overload
-    def forward(self, x1_incr: Masked, x2_incr: Masked) -> Masked: ...
-
-    def forward(self, x1_incr: SpOrDense, x2_incr: SpOrDense) -> SpOrDense:
+    def forward(self, x1_incr: Masked, x2_incr: SpOrDense) -> SpOrDense:
         output_incr = IncrPointwiseMultiply(x1_incr, self.x1_res, x2_incr, self.x2_res)
         return output_incr
 
@@ -117,12 +113,10 @@ class PointwiseMultiplyIncr(IncrementMaskModule):
         return x1*x2
 
 # nonlinear operations which are point ops; dense modules only
-# NECESSARILY NEEDS OUTPUT RESERVE CURRENTLY: could be bypassed possibly
 class NonlinearPointOpIncr(IncrementMaskModule):
-    def __init__(self, res_in: IncrementReserve, res_out: IncrementReserve, op=torch.tanh):
+    def __init__(self, res_in: IncrementReserve, op=torch.tanh):
         super().__init__()
         self.reservoir_in = res_in
-        self.reservoir_out = res_out
         self.op = op
 
     @overload
@@ -131,17 +125,17 @@ class NonlinearPointOpIncr(IncrementMaskModule):
     @overload
     def forward(self, x_incr: DenseT) -> DenseT: ...
 
-    def forward(self, x_incr: Masked) -> Masked:
+    def forward(self, x_incr: Masked, x_incr_mask: Masked=None) -> Masked:
         # compute only for these inputs.
-        return self._nonlin(x_incr)
+        return self._nonlin(x_incr, x_incr_mask)
 
     # x is like an input: don't update external reservoirs
     def forward_refresh_reservoirs(self, x: DenseT):
         return self.op(x)
 
     # need to be replaced with c++ binding
-    def _nonlin(self, x_incr):
-        output_incr = self.op(self.reservoir_in.reservoir + x_incr)# - self.reservoir_out.reservoir
+    def _nonlin(self, x_incr, x_incr_mask=None):
+        output_incr = self.op(self.reservoir_in.reservoir + x_incr)# - self.op(self.reservoir_in.reservoir)
         return output_incr
 
 
@@ -198,8 +192,7 @@ class ConvLayerIncr(IncrementMaskModule):
         if activation is not None:
             op = getattr(torch, activation, 'relu')
             self.activation_in_res = IncrementReserve()
-            self.activation_out_res = IncrementReserve()
-            self.activation = NonlinearPointOpIncr(self.activation_in_res, self.activation_out_res, op=op)
+            self.activation = NonlinearPointOpIncr(self.activation_in_res, op=op)
         else:
             self.activation = None
 
@@ -209,13 +202,6 @@ class ConvLayerIncr(IncrementMaskModule):
         elif norm == 'IN':
             self.norm_layer = nn.InstanceNorm2d(out_channels, track_running_stats=True)
 
-
-    @overload
-    def forward(self, x_incr: DenseT) -> DenseT: ...
-
-
-    @overload
-    def forward(self, x_incr: Sp) -> Sp: ...
 
 
     # fully connected implementation
@@ -231,7 +217,6 @@ class ConvLayerIncr(IncrementMaskModule):
         if self.activation is not None:
             out_incr_act = self.activation(out_incr)
             self.activation_in_res.accumulate(out_incr)
-            self.activation_out_res.accumulate(out_incr_act)
             out_incr = out_incr_act
 
         return out_incr
@@ -247,7 +232,6 @@ class ConvLayerIncr(IncrementMaskModule):
         if self.activation is not None:
             out_act = self.activation.forward_refresh_reservoirs(out)
             self.activation_in_res.update_reservoir(out)
-            self.activation_out_res.update_reservoir(out_act)
             out = out_act
 
         return out
@@ -289,12 +273,12 @@ class ConvLSTMIncr(IncrementMaskModule):
         self.in_s_cg_th_mult = PointwiseMultiplyIncr(self.in_s_res, self.cg_th_res)
         self.o_s_c_th_rm_mult = PointwiseMultiplyIncr(self.o_s_res, self.c_th_res)
 
-        self.rm_sigmoid = NonlinearPointOpIncr(self.rm_res, self.rm_s_res, torch.sigmoid)
-        self.in_sigmoid = NonlinearPointOpIncr(self.in_res, self.in_s_res, torch.sigmoid)
-        self.o_sigmoid = NonlinearPointOpIncr(self.o_res, self.o_s_res, torch.sigmoid)
+        self.rm_sigmoid = NonlinearPointOpIncr(self.rm_res, torch.sigmoid)
+        self.in_sigmoid = NonlinearPointOpIncr(self.in_res, torch.sigmoid)
+        self.o_sigmoid = NonlinearPointOpIncr(self.o_res, torch.sigmoid)
 
-        self.cg_tanh = NonlinearPointOpIncr(self.cg_res, self.cg_th_res, torch.tanh)
-        self.c_tanh = NonlinearPointOpIncr(self.c_res, self.c_th_res, torch.tanh)
+        self.cg_tanh = NonlinearPointOpIncr(self.cg_res, torch.tanh)
+        self.c_tanh = NonlinearPointOpIncr(self.c_res, torch.tanh)
 
     @overload
     def forward(self, input_incr: torch.Tensor, prev_state_incr: torch.Tensor) -> torch.Tensor: ...
@@ -463,12 +447,10 @@ class ResidualBlockIncr(IncrementMaskModule):
 #        self.relu = nn.ReLU(inplace=True)
 
         self.c1_in_res = IncrementReserve()
-        self.c1_out_res = IncrementReserve()
-        self.relu1 = NonlinearPointOpIncr(res_in=self.c1_in_res, res_out=self.c1_out_res, op=torch.relu)
+        self.relu1 = NonlinearPointOpIncr(res_in=self.c1_in_res, op=torch.relu)
 
         self.c2_in_res = IncrementReserve()
-        self.c2_out_res = IncrementReserve()
-        self.relu2 = NonlinearPointOpIncr(res_in=self.c2_in_res, res_out=self.c2_out_res, op=torch.relu)
+        self.relu2 = NonlinearPointOpIncr(res_in=self.c2_in_res, op=torch.relu)
 
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
         self.kf2 = KFencedMaskModule(k=k_init)
@@ -487,7 +469,6 @@ class ResidualBlockIncr(IncrementMaskModule):
 
         out_incr_relu = self.relu1(out_incr)
         self.c1_in_res.accumulate(out_incr)
-        self.c1_out_res.accumulate(out_incr_relu)
 
         out_incr = conv2d_from_module(out_incr_relu, self.conv2, bias=False)
         out_incr = self.kf2(out_incr)
@@ -504,7 +485,6 @@ class ResidualBlockIncr(IncrementMaskModule):
 
         out_incr_relu = self.relu2(out_incr)
         self.c2_in_res.accumulate(out_incr)
-        self.c2_out_res.accumulate(out_incr_relu)
 
         return out_incr_relu
 
@@ -519,7 +499,6 @@ class ResidualBlockIncr(IncrementMaskModule):
 
         out_relu = self.relu1.forward_refresh_reservoirs(out)
         self.c1_in_res.update_reservoir(out)
-        self.c1_out_res.update_reservoir(out_relu)
 
         out = self.conv2(out_relu)
         out = self.kf2.forward_refresh_reservoirs(out)
@@ -535,7 +514,6 @@ class ResidualBlockIncr(IncrementMaskModule):
 
         out_relu = self.relu2.forward_refresh_reservoirs(out)
         self.c2_in_res.update_reservoir(out)
-        self.c2_out_res.update_reservoir(out_relu)
 
         return out_relu
 
@@ -552,8 +530,7 @@ class TransposedConvLayerIncr(IncrementMaskModule):
         if activation is not None:
             op = getattr(torch, activation, 'relu')
             self.activation_in_res = IncrementReserve()
-            self.activation_out_res = IncrementReserve()
-            self.activation = NonlinearPointOpIncr(self.activation_in_res, self.activation_out_res, op=op)
+            self.activation = NonlinearPointOpIncr(self.activation_in_res, op=op)
         else:
             self.activation = None
 
@@ -575,7 +552,6 @@ class TransposedConvLayerIncr(IncrementMaskModule):
         if self.activation is not None:
             out_act_incr = self.activation(out_incr)
             self.activation_in_res.accumulate(out_incr)
-            self.activation_out_res.accumulate(out_act_incr)
             out_incr = out_act_incr
         return out_incr
 
@@ -588,7 +564,6 @@ class TransposedConvLayerIncr(IncrementMaskModule):
         if self.activation is not None:
             out_act = self.activation.forward_refresh_reservoirs(out)
             self.activation_in_res.update_reservoir(out)
-            self.activation_out_res.update_reservoir(out_act)
             out = out_act
             
         return out
@@ -603,8 +578,7 @@ class UpsampleConvLayerIncr(IncrementMaskModule):
         if activation is not None:
             op = getattr(torch, activation, 'relu')
             self.act_in_res = IncrementReserve()
-            self.act_out_res = IncrementReserve()
-            self.activation = NonlinearPointOpIncr(res_in=self.act_in_res, res_out=self.act_out_res, op=op)
+            self.activation = NonlinearPointOpIncr(res_in=self.act_in_res, op=op)
         else:
             self.activation = None
 
@@ -628,7 +602,6 @@ class UpsampleConvLayerIncr(IncrementMaskModule):
         if self.activation is not None:
             out_incr_act = self.activation(out_incr)
             self.act_in_res.accumulate(out_incr)
-            self.act_out_res.accumulate(out_incr_act)
             out_incr = out_incr_act
         
         return out_incr
@@ -646,7 +619,6 @@ class UpsampleConvLayerIncr(IncrementMaskModule):
         if self.activation is not None:
             out_act = self.activation.forward_refresh_reservoirs(out)
             self.act_in_res.update_reservoir(out)
-            self.act_out_res.update_reservoir(out_act)
             out = out_act
         return out
 
@@ -684,9 +656,8 @@ class BaseUNetIncr(IncrementMaskModule):
         self.encoder_output_sizes = [self.base_num_channels * pow(2, i + 1) for i in range(self.num_encoders)]
 
         self.act_baseunet_in_res = IncrementReserve()
-        self.act_baseunet_out_res = IncrementReserve()
         op = getattr(torch, activation, 'sigmoid')
-        self.activation = NonlinearPointOpIncr(self.act_baseunet_in_res, self.act_baseunet_out_res, op)
+        self.activation = NonlinearPointOpIncr(self.act_baseunet_in_res, op)
 
     def build_resblocks(self):
         self.resblocks = nn.ModuleList()
@@ -772,7 +743,6 @@ class UNetRecurrentIncr(BaseUNetIncr):
         pred_incr = self.pred(self.apply_skip_connection(x_incr, head))
         img_incr = self.activation(pred_incr)
         self.act_baseunet_in_res.accumulate(pred_incr)
-        self.act_baseunet_out_res.accumulate(img_incr)
         
         print_sparsity(x_incr, "final")
 
@@ -806,7 +776,6 @@ class UNetRecurrentIncr(BaseUNetIncr):
         pred = self.pred.forward_refresh_reservoirs(self.apply_skip_connection(x, head))
         img = self.activation.forward_refresh_reservoirs(pred)
         self.act_baseunet_in_res.update_reservoir(pred)
-        self.act_baseunet_out_res.update_reservoir(img)
 
         return img, states
 

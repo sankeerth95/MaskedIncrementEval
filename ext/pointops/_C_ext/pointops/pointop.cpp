@@ -4,22 +4,27 @@
 #include "checks.h"
 
 
+//dispatch cuda kernel
+void activation_increment(
+    torch::Tensor &X,
+    torch::Tensor const &in_incr,
+    torch::Tensor &out_incr  // expect a zero tensor
+)
+{
+    CHECK_INPUT(X);
+    CHECK_INPUT(in_incr);
+    CHECK_INPUT(out_incr);
 
-torch::Tensor pointwise_add(torch::Tensor const &self, torch::Tensor const &input_incr_values, torch::Tensor const &input_incr_indices){
-    CHECK_INPUT(self);
-    CHECK_INPUT(input_incr_values);
-    CHECK_INPUT(input_incr_indices);
-
-    return pointwise_add_cuda(
-      static_cast<c10::DeviceIndex>(0),
-      self,
-      input_incr_values,
-      input_incr_indices
+    activation_increment_cuda_wrapper(
+      X,
+      in_incr,
+      out_incr  // expect a zero tensor
     );
+
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("pointwise_add", &pointwise_add, "Pointwise add Forward");
+  m.def("activation_increment", &activation_increment, "Acitvate and increment x tensor;j");
 }
 
 
