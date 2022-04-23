@@ -22,7 +22,7 @@ class ActivationIncrHandler(IncrModelHandler):
     
 class ActivationHandler(BaselineModelhandler):
     def __init__(self, device='cuda'):
-        super().__init__(nn.ReLU().to(device))
+        super().__init__(nn.Sigmoid().to(device))
 
     def run_once(self, x):
         return self.op(x[0])

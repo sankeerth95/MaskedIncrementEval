@@ -27,7 +27,6 @@ __global__ void activation_increment_kernel(
     scalar_t * __restrict__ out_incr,  // expect a zero tenor, out
     dim const X_dim
 ){
-    return;
     // int const warp_idx = threadIdx.x/WARP_SIZE;
     int const lane_idx = threadIdx.x%WARP_SIZE;
     int const block_idx = blockIdx.x;
@@ -48,7 +47,6 @@ __global__ void activation_increment_kernel(
 
     int const px_offs = h*X_dim.W + w;
 
-    // for(int i = 0; i < )
     for(int c = c_in_start; c < c_in_end ; c += 1){
         int x_id = c*X_dim.H*X_dim.W + px_offs;
         scalar_t* reserve = &X[x_id];
@@ -59,7 +57,7 @@ __global__ void activation_increment_kernel(
     }
 }
 
-template <typename scalar_t, int C_PER_BLOCK=3, int H_PER_BLOCK=3, int W_PER_BLOCK=3>
+template <typename scalar_t, int C_PER_BLOCK=16, int H_PER_BLOCK=3, int W_PER_BLOCK=3>
 void activation_increment_cuda(
     torch::Tensor &X,
     torch::Tensor const &in_incr,
@@ -91,7 +89,7 @@ void activation_increment_cuda_wrapper(
     torch::Tensor const &in_incr,
     torch::Tensor &out_incr  // expect a zero tensor
 ){
-    activation_increment_cuda<float>(
+    activation_increment_cuda<float, 18, 3, 3>(
         X,
         in_incr,
         out_incr  // expect a zero tensor
