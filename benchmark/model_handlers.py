@@ -24,16 +24,16 @@ class BaselineModelhandler(ModelHandler):
         self.op.eval()
 
     def run_once(self, input_sample):
-        return self.op(input_sample, None)
+        return self.op(input_sample)
 
 
 class IncrModelHandler(ModelHandler):
     def __init__(self, incr_op: IncrementMaskModule, prev_x_input):
         super().__init__(incr_op)
-        self.op.eval()
-        self.op.forward_refresh_reservoirs(prev_x_input, None)
+        self.op.forward_refresh_reservoirs(prev_x_input)
 
     def run_once(self, input_sample):
-        return self.op(input_sample, None)
+        return self.op(input_sample)
+
 
 

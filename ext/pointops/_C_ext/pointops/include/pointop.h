@@ -10,15 +10,6 @@ struct dim{
     }
 };
 
-template <typename scalar_t>
-void activation_increment_cuda(
-    torch::Tensor &X,
-    torch::Tensor const &in_incr,
-    torch::Tensor &out_incr  // expect a zero tensor
-);
-
-
-
 
 // cpu functions
 void activation_increment_cuda_wrapper(

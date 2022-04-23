@@ -3,6 +3,7 @@ import torch.nn.functional as F
 
 # gives the places to apply convolution
 def get_mask(x, field_size: int=3, threshold: float=0.0001):
+    return
     assert len(x.shape) == 4 # NCHW input
 
     # number of nonzeros: places to apply convolution

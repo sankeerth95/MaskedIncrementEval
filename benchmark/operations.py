@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 
-from utils.str_sparse_utils import get_mask
-from .model_handlers import BaselineModelhandler
+from .model_handlers import BaselineModelhandler, IncrModelHandler
 
 
 
@@ -11,6 +10,22 @@ class Conv2dBaseline(BaselineModelhandler):
     def __init__(self, shape=(32, 64), kernel = 3, padding=0, device='cuda'):
         super().__init__(nn.Conv2d(shape[0], shape[1], kernel_size=kernel, padding=padding).to(device))
 
+
+
+from ext.pointops.pointops import ActivationIncr
+
+
+class ActivationIncrHandler(IncrModelHandler):
+    def __init__(self, shape=(32, 64), device='cuda'):
+        super().__init__(ActivationIncr(shape, device), torch.zeros(shape).to(device))
+
+    
+class ActivationHandler(BaselineModelhandler):
+    def __init__(self, device='cuda'):
+        super().__init__(nn.ReLU().to(device))
+
+    def run_once(self, x):
+        return self.op(x[0])
 
 
 

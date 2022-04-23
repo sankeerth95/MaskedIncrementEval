@@ -20,14 +20,14 @@ __device__ __forceinline__ scalar_t activation(scalar_t x) {
 
 
 // assuems C,H,W format
-template <typename scalar_t, int activation_fn=0, int FIELD_SIZE=3, int C_PER_BLOCK=4, int H_PER_BLOCK=3, int W_PER_BLOCK=3, int WARP_SIZE=32>
+template <typename scalar_t, int C_PER_BLOCK=3, int H_PER_BLOCK=3, int W_PER_BLOCK=3, int WARP_SIZE=32>
 __global__ void activation_increment_kernel(
     scalar_t *__restrict__  X,
     scalar_t const *__restrict__ in_incr,
     scalar_t * __restrict__ out_incr,  // expect a zero tenor, out
     dim const X_dim
 ){
-
+    return;
     // int const warp_idx = threadIdx.x/WARP_SIZE;
     int const lane_idx = threadIdx.x%WARP_SIZE;
     int const block_idx = blockIdx.x;
@@ -59,18 +59,13 @@ __global__ void activation_increment_kernel(
     }
 }
 
-template<typename scalar_t>
+template <typename scalar_t, int C_PER_BLOCK=3, int H_PER_BLOCK=3, int W_PER_BLOCK=3>
 void activation_increment_cuda(
     torch::Tensor &X,
     torch::Tensor const &in_incr,
     torch::Tensor &out_incr  // expect a zero tensor
 ){
-
     auto X_dim = dim(X.sizes());
-
-    int const H_PER_BLOCK=3;
-    int const W_PER_BLOCK=3;
-    int const C_PER_BLOCK=3;
 
     // per block function: 3*3*C_PER_BLOCK
     int const H_up = divup(X_dim.H, H_PER_BLOCK);
@@ -80,7 +75,7 @@ void activation_increment_cuda(
     int const blocks = H_up*C_up*W_up;
     int const threads = 32;
 
-    activation_increment_kernel<scalar_t><<<blocks, threads>>>(
+    activation_increment_kernel<scalar_t, C_PER_BLOCK, H_PER_BLOCK, W_PER_BLOCK><<<blocks, threads>>>(
         X.data_ptr<scalar_t>(), 
         in_incr.data_ptr<scalar_t>(), 
         out_incr.data_ptr<scalar_t>(), 

@@ -67,11 +67,15 @@ if __name__ == '__main__':
 
     # compare_deltaconvstrsparse_varying_sparsity(ksize=3, sp1=0.3, sp2=0.7)
 
+    in_shape = (512, 346, 260)
+    print(benchmark_incrRelu(in_shape))
+    print(benchmark_Relu(in_shape))
+
     # run_sequence_of_deltaconv_sparse_benchmarks()
     pth = None
     # pth = '/home/sankeerth/tmp/e2depth_train_test_1/checkpoint-epoch001-loss-0.0000.pth.tar'
-    print(benchmark_e2vid_incr(pth))
-    print(benchmark_e2vid(pth))
+    # print(benchmark_e2vid_incr(pth))
+    # print(benchmark_e2vid(pth))
 
     # ret = benchmark_conv(in_shape = (1, 256, 346, 260), shape=[256, 512])
     # print(ret)
