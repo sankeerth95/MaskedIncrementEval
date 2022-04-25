@@ -11,11 +11,6 @@ nonlin op : -----
         output_incr = self.op(self.reservoir_in.reservoir + x_incr)
 
 
-COULD NOT BE DONE1
-
-
-
-
 
 kfenced_module: 
 
@@ -36,4 +31,39 @@ all of these contribute a lot lot to the total timel: what used to be just 2ms.
 
 
 accumulate: different stream, outside critical path?
+
+
+ 10%|██████████████▋                                                                                                                                    | 4/40 [00:00<00:04,  8.54it/s]before convhead 0.638063907623291
+conv shape:  torch.Size([1, 5, 264, 352]) filter: torch.Size([32, 5, 5, 5])
+after convhead 0.5419891476631165
+conv shape:  torch.Size([1, 32, 264, 352]) filter: torch.Size([64, 32, 5, 5])
+conv shape:  torch.Size([1, 128, 132, 176]) filter: torch.Size([256, 128, 3, 3])
+after encoder0 0.5806578993797302
+conv shape:  torch.Size([1, 64, 132, 176]) filter: torch.Size([128, 64, 5, 5])
+conv shape:  torch.Size([1, 256, 66, 88]) filter: torch.Size([512, 256, 3, 3])
+after encoder1 0.7258159518241882
+conv shape:  torch.Size([1, 128, 66, 88]) filter: torch.Size([256, 128, 5, 5])
+conv shape:  torch.Size([1, 512, 33, 44]) filter: torch.Size([1024, 512, 3, 3])
+after encoder2 0.9726132154464722
+conv shape:  torch.Size([1, 256, 33, 44]) filter: torch.Size([256, 256, 3, 3])
+conv shape:  torch.Size([1, 256, 33, 44]) filter: torch.Size([256, 256, 3, 3])
+after resblock0 0.7293280959129333
+conv shape:  torch.Size([1, 256, 33, 44]) filter: torch.Size([256, 256, 3, 3])
+conv shape:  torch.Size([1, 256, 33, 44]) filter: torch.Size([256, 256, 3, 3])
+after resblock1 0.4388047754764557
+conv shape:  torch.Size([1, 256, 66, 88]) filter: torch.Size([128, 256, 5, 5])
+after decoder0 0.6764605641365051
+conv shape:  torch.Size([1, 128, 132, 176]) filter: torch.Size([64, 128, 5, 5])
+after decoder1 0.6870346069335938
+conv shape:  torch.Size([1, 64, 264, 352]) filter: torch.Size([32, 64, 5, 5])
+after decoder2 0.7144304513931274
+conv shape:  torch.Size([1, 32, 264, 352]) filter: torch.Size([1, 32, 1, 1]) 
+
+
+
+
+
+
+
+
 
