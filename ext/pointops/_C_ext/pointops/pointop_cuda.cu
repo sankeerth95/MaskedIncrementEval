@@ -4,7 +4,8 @@
 #include <c10/cuda/CUDAStream.h>
 #include <ATen/ATen.h>
 
-#include "pointop.h"
+#include "ops.h"
+#include "utils.h"
 #include "checks.h"
 
 
@@ -13,10 +14,6 @@ __device__ __forceinline__ scalar_t activation(scalar_t x) {
     return x < 0.0f ? 0.0f : x; 
 }
 
-// only works for channel size:
-// first: is it a competetive implementation? benchmark this first;
-// if yes, implemt masked version; does that provide benefit?
-// if yes, yaay. if no, cry.
 
 
 // assuems C,H,W format
@@ -89,7 +86,7 @@ void activation_increment_cuda_wrapper(
     torch::Tensor const &in_incr,
     torch::Tensor &out_incr  // expect a zero tensor
 ){
-    activation_increment_cuda<float, 18, 3, 3>(
+    activation_increment_cuda<float, 16, 3, 3>(
         X,
         in_incr,
         out_incr  // expect a zero tensor

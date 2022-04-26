@@ -1,30 +1,34 @@
 #pragma once
 #include <torch/extension.h>
 
-#define divup(a, b) (((a) + (b) - 1) / (b))
 
-struct dim{
-    int const C, H, W;
-    dim(c10::IntArrayRef sizes): C(sizes[0]), H(sizes[1]), W(sizes[2])
-    {
-    }
-};
-
-
-// cpu functions
-void activation_increment_cuda_wrapper(
-    torch::Tensor &X,
-    torch::Tensor const &in_incr,
-    torch::Tensor &out_incr  // expect a zero tensor
-);
-
+//  incr activation kernels
 void activation_increment(
     torch::Tensor &X,
     torch::Tensor const &in_incr,
     torch::Tensor &out_incr  // expect a zero tensor
 );
 
+void activation_increment_cuda_wrapper(
+    torch::Tensor &X,
+    torch::Tensor const &in_incr,
+    torch::Tensor &out_incr  // expect a zero tensor
+);
 
 
 
+
+//  convolution kernels
+void conv3x3_increment(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+);
+
+
+void conv3x3_increment_cuda_wrapper(
+    torch::Tensor const &in_incr,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+);
 
