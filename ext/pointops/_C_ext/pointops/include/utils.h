@@ -2,9 +2,7 @@
 
 #include <torch/extension.h>
 
-
 #define divup(a, b) (((a) + (b) - 1) / (b))
-
 
 
 // trivially copyable structs

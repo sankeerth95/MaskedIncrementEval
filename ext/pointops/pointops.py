@@ -24,22 +24,22 @@ class ActivationIncr(IncrementMaskModule):
 
 
 # convolution wrapper
-
-def conv3x3_incr(x, filter, c_in, c_out):
-    output_= torch.zeros(c_out, x.shape[2], x.shape[3])
+# filter: (out, in, f_h, f_w)
+def conv3x3_incr(x, filter):
+    output_= torch.zeros(filter.shape[0], x.shape[2], x.shape[3]).cuda()
     conv3x3_increment(x[0], filter, output_)
     return output_
 
 class Conv3x3Incr(IncrementMaskModule):
 
-    def __init__(self, c_in, c_out, weight, device='cuda'):
+    def __init__(self, c_in, c_out, weight, padding=0, device='cuda'):
         super().__init__()
         self.weight = weight
         self.c_in = c_in
         self.c_out = c_out
 
     def forward(self, x_incr):
-        conv3x3_incr(x_incr, self.weight, self.c_in, self.c_out)
+        conv3x3_incr(x_incr, self.weight)
 
     def forward_refresh_reservoir(self, x):
         return F.conv2d(x, self.weight)

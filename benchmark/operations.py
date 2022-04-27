@@ -32,8 +32,9 @@ class ActivationHandler(BaselineModelhandler):
 from ext.pointops.pointops import Conv3x3Incr
 
 class Conv3x3IncrBaseline(BaselineModelhandler):
-    def __init__(self, shape=(32, 64), kernel = 3, padding=0, device='cuda'):
-        super().__init__(Conv3x3Incr(shape[0], shape[1], kernel_size=kernel, padding=padding).to(device))
+    def __init__(self, shape=(32, 64), kernel_size = 3, padding=0, device='cuda'):
+        kernel = torch.randn(shape[1], shape[0], kernel_size, kernel_size).to(device)
+        super().__init__(Conv3x3Incr(shape[0], shape[1], weight=kernel, padding=padding).to(device))
 
 
 # from ext.DeltaCNN.src.deltacnn.cuda_kernels import sparse_conv

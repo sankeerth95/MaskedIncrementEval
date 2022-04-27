@@ -25,17 +25,16 @@ def run_sequence_of_deltaconv_sparse_benchmarks():
 
 def compare_conv_with_network_shapes(compare_benchmarks):
 
+    # print(compare_benchmarks(in_shape=(1, 5, 264, 352),     shape=(5, 32),      k=5))
+    # print(compare_benchmarks(in_shape=(1, 32, 264, 352),    shape=(32, 64),     k=5))
 
-    print(compare_benchmarks(in_shape=(1, 5, 264, 352),     shape=(5, 32),      k=5))
-
-    print(compare_benchmarks(in_shape=(1, 32, 264, 352),    shape=(32, 64),     k=5))
     print(compare_benchmarks(in_shape=(1, 128, 132, 176),   shape=(128, 256),   k=3)) 
 
 
-    print(compare_benchmarks(in_shape=(1, 64, 132, 176),    shape=(64, 128),    k=5)) 
+    # print(compare_benchmarks(in_shape=(1, 64, 132, 176),    shape=(64, 128),    k=5)) 
     print(compare_benchmarks(in_shape=(1, 256, 66, 88),     shape=(256, 512),   k=3)) 
 
-    print(compare_benchmarks(in_shape=(1, 128, 66, 88),     shape=(128, 256),   k=5)) 
+    # print(compare_benchmarks(in_shape=(1, 128, 66, 88),     shape=(128, 256),   k=5)) 
     print(compare_benchmarks(in_shape=(1, 512, 33, 44),     shape=(512, 1024),  k=3)) 
 
 
@@ -45,13 +44,13 @@ def compare_conv_with_network_shapes(compare_benchmarks):
     print(compare_benchmarks(in_shape=(1, 256, 33, 44),     shape=(256, 256),   k=3)) 
 
 
-    print(compare_benchmarks(in_shape=(1, 256, 66, 88),     shape=(256, 128),   k=5)) 
+    # print(compare_benchmarks(in_shape=(1, 256, 66, 88),     shape=(256, 128),   k=5)) 
 
-    print(compare_benchmarks(in_shape=(1, 128, 132, 176),   shape=(128, 64) ,   k=5)) 
+    # print(compare_benchmarks(in_shape=(1, 128, 132, 176),   shape=(128, 64) ,   k=5)) 
 
-    print(compare_benchmarks(in_shape=(1, 64, 264, 352),    shape=(64, 32)  ,   k=5)) 
+    # print(compare_benchmarks(in_shape=(1, 64, 264, 352),    shape=(64, 32)  ,   k=5)) 
 
-    print(compare_benchmarks(in_shape=(1, 32, 264, 352),    shape=(32, 1)   ,   k=1)) 
+    # print(compare_benchmarks(in_shape=(1, 32, 264, 352),    shape=(32, 1)   ,   k=1)) 
 
 
 

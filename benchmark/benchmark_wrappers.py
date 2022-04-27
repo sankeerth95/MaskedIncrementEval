@@ -1,7 +1,7 @@
 from benchmark.model_getter import ModelGetter
 from benchmark.model_handlers import IncrModelHandler, BaselineModelhandler
 from benchmark.input_handlers import IncrDatasetInputHandler, RandomInputHandler, SparseRandomInputHandler, StructurallySparseRandomInputHandlerNCHW
-from benchmark.operations import ActivationHandler, ActivationIncrHandler, Conv2dBaseline
+from benchmark.operations import ActivationHandler, ActivationIncrHandler, Conv2dBaseline, Conv3x3IncrBaseline
 from benchmark.ops_benchmark import BenchmarkNetwork
 from metrics.structural_sparsity import field_channel_sparsity
 
@@ -34,7 +34,7 @@ def benchmark_conv(in_shape, shape=(32, 64), k=3, stride=1):
 def benchmark_incrconv(in_shape, shape=(32, 64), k=3, stride=1):
     device = 'cuda'
     input_h = RandomInputHandler(in_shape, device=device)
-    model_h = ConvIncr(shape, kernel=k, device=device)
+    model_h = Conv3x3IncrBaseline(shape, kernel_size=k, device=device)
     benchmark = BenchmarkNetwork(input_h, model_h)
     return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
 

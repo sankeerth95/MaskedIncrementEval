@@ -1,5 +1,4 @@
 #include <c10/cuda/CUDAStream.h>
-
 #include "ops.h"
 #include "utils.h"
 #include "checks.h"
@@ -21,7 +20,6 @@ void activation_increment(
       in_incr,
       out_incr  // expect a zero tensor
     );
-
 }
 
 
@@ -30,7 +28,6 @@ void conv3x3_increment(
     torch::Tensor const &filter,
     torch::Tensor &out_incr  // expect a zero tensor
 ){
-
     CHECK_INPUT(x_incr);
     CHECK_INPUT(filter);
     CHECK_INPUT(out_incr);
@@ -40,7 +37,6 @@ void conv3x3_increment(
       filter,
       out_incr
     );
-
 }
 
 
