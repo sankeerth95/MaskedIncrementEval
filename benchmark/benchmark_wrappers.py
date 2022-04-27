@@ -30,6 +30,16 @@ def benchmark_conv(in_shape, shape=(32, 64), k=3, stride=1):
     return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
 
 
+
+def benchmark_incrconv(in_shape, shape=(32, 64), k=3, stride=1):
+    device = 'cuda'
+    input_h = RandomInputHandler(in_shape, device=device)
+    model_h = ConvIncr(shape, kernel=k, device=device)
+    benchmark = BenchmarkNetwork(input_h, model_h)
+    return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
+
+
+
 def benchmark_deltaconv(in_shape, shape=(32, 64), k=3, stride=1, sparsity=0.9):
     device='cuda'
     input_h = SparseRandomInputHandler(in_shape, sparsity=sparsity, device=device)

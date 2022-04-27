@@ -42,14 +42,13 @@ __device__ __forceinline__ void calc_field_indices(int &c_in_start, int& c_in_en
 }
 
 
-// one variant of convolution
+// one variant of convolution: input channelwise looped convolution;
 // each thread only loops through the input block; computes one output block in same padding mode;
 // this can be furthe rparallelized; but let's see how it performs
 
 
 // H_PER_BLOCK, they cannot go through that execution path 
 // C_PER_BLOCK
-
 template <typename scalar_t, int WARP_SIZE=32, int C_OUT_PER_BLOCK_PER_WARP=3, int H_OUT_PER_BLOCK=2, int W_OUT_PER_BLOCK=2>
 __global__ void conv3x3(
     scalar_t const *__restrict__ conv_filter,

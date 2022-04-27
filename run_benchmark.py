@@ -57,6 +57,20 @@ def compare_conv_with_network_shapes(compare_benchmarks):
 
 
 
+
+def compare_incrconv_with_torchconv_():
+    
+    def compare_benchmarks(in_shape, shape=(32, 64), k=3, stride=1):
+        t1 = benchmark_conv(in_shape=in_shape, shape=shape, k=k)
+        t2 = benchmark_incrconv(in_shape=in_shape, shape=shape, k=k)
+        return t1/t2
+
+    compare_conv_with_network_shapes(compare_benchmarks)
+
+
+
+
+
 def compare_deltaconv_with_torchconv_():
     
     def compare_benchmarks(in_shape, shape=(32, 64), k=3, stride=1):
@@ -103,9 +117,13 @@ if __name__ == '__main__':
 
     # compare_deltaconvstrsparse_varying_sparsity(ksize=3, sp1=0.3, sp2=0.7)
 
-    in_shape = (512, 346, 260)
-    print(benchmark_incrRelu(in_shape))
-    print(benchmark_Relu(in_shape))
+
+    compare_incrconv_with_torchconv_()
+
+
+    # in_shape = (512, 346, 260)
+    # print(benchmark_incrRelu(in_shape))
+    # print(benchmark_Relu(in_shape))
 
     # run_sequence_of_deltaconv_sparse_benchmarks()
     pth = None
