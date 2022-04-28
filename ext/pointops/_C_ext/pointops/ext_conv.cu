@@ -38,9 +38,10 @@ __device__ __forceinline__ void calc_tile_indices(int& tile_start_out_y, int& ti
 
 template<typename scalar_t=float, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6, int OUT_CHANNELS_PER_BLOCK=256, int BLOCK_SIZE=OUT_CHANNELS_PER_BLOCK>
 __global__ void conv_3x3_ext(
-    const scalar_t* filter, //channel at the end;
-    const scalar_t* input,  // NHWC
-    scalar_t* output,       // NHWC
+    const scalar_t* __restrict__ filter, //channel at the end;
+    const bool*__restrict__ mask,
+    const scalar_t* __restrict__ input,  // NHWC
+    scalar_t* __restrict__ output,       // NHWC
     int const in_C, int const in_H, int const in_W,
     int const out_C, int const out_H, int const out_W
 ) {
@@ -105,6 +106,8 @@ __global__ void conv_3x3_ext(
             for(int in_c = 0; in_c < WARP_SIZE && in_c + in_c_off < in_C; ++in_c) {
                 const scalar_t *in_c_filter = &filter[(in_c_off+in_c) * 9 * out_C + out_c];
 
+                if(mask[in_c]) continue;
+
                 scalar_t t_f[9];
                 #pragma unroll
                 for(int f_y = 0; f_y < 3; ++f_y) {
@@ -120,9 +123,7 @@ __global__ void conv_3x3_ext(
                         for (int in_x = -1; in_x < w_in -1; ++in_x) {
 
                             const scalar_t val = smem.dense_s_in[(in_y + 1) * w_in + (in_x + 1)][in_c];
-                            if((in_y + 1) * w_in + (in_x + 1) >= n_in_px_aligned || in_c >= WARP_SIZE){
-                                printf("%d %d\n", in_x, in_c);
-                            }
+
                             const int min_f_y = -in_y;
                             const int min_f_x = -in_x;
                             const int max_f_y = h_in - in_y - 3;
@@ -164,6 +165,7 @@ __global__ void conv_3x3_ext(
 template <typename scalar_t, int WARP_SIZE=32, int H_OUT_PER_BLOCK=6, int W_OUT_PER_BLOCK=6>
 void conv3x3_increment_cuda_ext(
     torch::Tensor const &in_incr,
+    torch::Tensor const &mask,
     torch::Tensor const &filter,
     torch::Tensor &out_incr  // expect a zero tensor
 ){
@@ -180,6 +182,7 @@ void conv3x3_increment_cuda_ext(
     conv_3x3_ext<scalar_t, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> 
     <<<blocks, threads>>>(
         filter.data_ptr<scalar_t>(),
+        mask.data_ptr<bool>(),
         in_incr.data_ptr<scalar_t>(),
         out_incr.data_ptr<scalar_t>(),
         in_C, in_H, in_W,
@@ -193,12 +196,14 @@ void conv3x3_increment_cuda_ext(
 
 void conv3x3_increment_ext_cuda_wrapper(
     torch::Tensor const &in_incr,
+    torch::Tensor const &mask,
     torch::Tensor const &filter,
     torch::Tensor &out_incr  // empty tensor;
 ){
 
     conv3x3_increment_cuda_ext<float, 32, 6, 6>(
         in_incr,
+        mask,
         filter,
         out_incr  // expect a zero tensor
     );

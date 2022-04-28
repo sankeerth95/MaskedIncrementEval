@@ -55,8 +55,6 @@ def compare_conv_with_network_shapes(compare_benchmarks):
 
 
 
-
-
 def compare_incrconv_with_torchconv_():
     
     def compare_benchmarks(in_shape, shape=(32, 64), k=3, stride=1):

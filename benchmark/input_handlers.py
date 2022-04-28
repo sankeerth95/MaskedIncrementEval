@@ -50,7 +50,7 @@ class SparseRandomInputHandler(RandomInputHandler):
         self.sparsity = sparsity
 
     def get_single_sample(self, index: int):
-        x = (torch.rand(self.shape).to(self.device) > self.sparsity)
+        x = (torch.rand(self.shape, device=self.device) > self.sparsity)
         ret = self.scale*x*(torch.randn(self.shape).to(self.device))
         # print("field channel sparsity = ", field_channel_sparsity(ret, 3))
         return ret, get_mask(ret)

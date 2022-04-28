@@ -32,10 +32,10 @@ def conv3x3_incr(x, filter):
 
 
 # x should be an nhwc non-contiguous tensor; 
-def conv3x3_incr_ext(x, filter, c_out):
+def conv3x3_incr_ext(x, filter, c_out, mask=None):
     # NHWC format (noncontiguous input))
     output_= torch.empty((x.shape[0], c_out, x.shape[2], x.shape[3]), dtype=torch.float, device='cuda', memory_format=torch.channels_last)
-    conv3x3_increment_ext(x, filter, output_)
+    conv3x3_increment_ext(x, mask, filter, output_)
     return output_
 
 def convert_filter_out_channels_last(filter, transposed=False):
@@ -52,11 +52,12 @@ class Conv3x3Incr(IncrementMaskModule):
         self.weight_t = convert_filter_out_channels_last(weight)
         self.c_in = c_in
         self.c_out = c_out
+        self.mask = torch.rand(32, device=device).ge(0.5)
 
     # expects nhwc tensor
     def forward(self, x_incr):
         # print(x_incr.shape, self.weight.shape, self.c_out)
-        conv3x3_incr_ext(x_incr, self.weight_t, self.c_out)
+        conv3x3_incr_ext(x_incr, self.weight_t, self.c_out, self.mask)
 
     def forward_refresh_reservoir(self, x):
         return F.conv2d(x, self.weight)

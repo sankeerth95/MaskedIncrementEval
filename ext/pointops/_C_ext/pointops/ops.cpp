@@ -42,15 +42,18 @@ void conv3x3_increment(
 
 void conv3x3_increment_ext(
     torch::Tensor const &x_incr,
+    torch::Tensor const &mask,
     torch::Tensor const &filter,
     torch::Tensor &out_incr  // expect a zero tensor
 ){
     CHECK_CUDA(x_incr);   //NOT CONTIGUOUS
+    CHECK_INPUT(mask);   // contiguous;
     CHECK_INPUT(filter);   // contiguous;
     CHECK_CUDA(out_incr); // not contiguous
 
     conv3x3_increment_ext_cuda_wrapper(
       x_incr,
+      mask,
       filter,
       out_incr
     );
