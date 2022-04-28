@@ -27,7 +27,7 @@ __device__ __forceinline__ void calc_tile_indices(int& tile_start_out_y, int& ti
 
     if (FULL_DEPTH) {
         tile_start_z = 0;
-        batch = blockIdx.z;
+        batch = 0;//blockIdx.z;
     } else {
         const int blocksPerBatch = divup(out_C, OUT_CHANNELS_PER_BLOCK);
         tile_start_z = (blockIdx.z % blocksPerBatch) * OUT_CHANNELS_PER_BLOCK;
@@ -36,7 +36,7 @@ __device__ __forceinline__ void calc_tile_indices(int& tile_start_out_y, int& ti
 }
 
 
-template<typename scalar_t=float, int WARP_SIZE=32, int pixelsPerBlockX=3, int pixelsPerBlockY=3, int OUT_CHANNELS_PER_BLOCK=32, int BLOCK_SIZE=256>
+template<typename scalar_t=float, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6, int OUT_CHANNELS_PER_BLOCK=256, int BLOCK_SIZE=OUT_CHANNELS_PER_BLOCK>
 __global__ void conv_3x3_ext(
     const scalar_t* filter, //channel at the end;
     const scalar_t* input,  // NHWC
@@ -44,8 +44,6 @@ __global__ void conv_3x3_ext(
     int const in_C, int const in_H, int const in_W,
     int const out_C, int const out_H, int const out_W
 ) {
-    const int in_row_vals = in_W * in_C;
-    const int n_pixels_out = pixelsPerBlockX * pixelsPerBlockY;
 
     // true for full depth
     int tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch;
@@ -76,9 +74,9 @@ __global__ void conv_3x3_ext(
     // TODO fix dilation and striding for sparse version
     for (int out_c_off = tile_start_z; out_c_off < out_C; out_c_off += BLOCK_SIZE) {
         const int out_c = out_c_off + threadIdx.x; // parallelization across channels
-        scalar_t t_out[n_pixels_out];
+        scalar_t t_out[pixelsPerBlockX * pixelsPerBlockY];
         #pragma unroll
-        for (int i = 0; i < n_pixels_out; ++i) {
+        for (int i = 0; i < pixelsPerBlockX * pixelsPerBlockY; ++i) {
             t_out[i] = 0.0f;
         }
 
@@ -86,7 +84,7 @@ __global__ void conv_3x3_ext(
             __syncthreads();
             // int const lane_idx = threadIdx.x % WARP_SIZE;
             // int const warp_idx = threadIdx.x/WARP_SIZE;
-            for (int px_idx = warp_idx; px_idx < n_in_px; px_idx += n_warps) {
+            for (int px_idx = warp_idx; px_idx < w_in * h_in; px_idx += n_warps) {
                 const int in_y = px_idx / w_in; 
                 const int in_x = px_idx % w_in;
                 const int in_c = in_c_off + lane_idx;
@@ -95,7 +93,7 @@ __global__ void conv_3x3_ext(
                 if (valid) {
                     const int in_y_im = in_y + tile_start_in_y;
                     const int in_x_im = in_x + tile_start_in_x; 
-                    smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_row_vals + in_x_im * in_C + in_c];
+                    smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
                 } else {
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = 0.0f;
                 }
@@ -106,9 +104,6 @@ __global__ void conv_3x3_ext(
             // sequential af. : can skip a part of this with the sequential mask. But before we actually do that; have alook oncemore
             for(int in_c = 0; in_c < WARP_SIZE && in_c + in_c_off < in_C; ++in_c) {
                 const scalar_t *in_c_filter = &filter[(in_c_off+in_c) * 9 * out_C + out_c];
-
-                // continue;
-
 
                 scalar_t t_f[9];
                 #pragma unroll
@@ -123,9 +118,13 @@ __global__ void conv_3x3_ext(
                     for (int in_y = -1; in_y < h_in -1; ++in_y) {
                         #pragma unroll
                         for (int in_x = -1; in_x < w_in -1; ++in_x) {
+
                             const scalar_t val = smem.dense_s_in[(in_y + 1) * w_in + (in_x + 1)][in_c];
+                            if((in_y + 1) * w_in + (in_x + 1) >= n_in_px_aligned || in_c >= WARP_SIZE){
+                                printf("%d %d\n", in_x, in_c);
+                            }
                             const int min_f_y = -in_y;
-                            const int min_f_x = -in_x;  
+                            const int min_f_x = -in_x;
                             const int max_f_y = h_in - in_y - 3;
                             const int max_f_x = w_in - in_x - 3;
 
@@ -133,7 +132,7 @@ __global__ void conv_3x3_ext(
                             for (int f_y = Utils::constexpr_max(-1 , min_f_y); f_y <= Utils::constexpr_min(1, max_f_y); f_y += 1) {
                                 #pragma unroll
                                 for (int f_x = Utils::constexpr_max(-1 , min_f_x); f_x <= Utils::constexpr_min(1, max_f_x); f_x += 1) {
-                                    t_out[(in_y+f_y) * pixelsPerBlockX + (in_x+f_x)] += val * t_f[(f_y+1)*3 + f_x+1];   // add values computed per batch; can we translate this ?
+                                    t_out[(in_y+f_y) * pixelsPerBlockX + (in_x+f_x)] += val * t_f[(f_y+1)*3 + f_x+1];
                                 }
                             }
                         }
@@ -162,29 +161,24 @@ __global__ void conv_3x3_ext(
 
 
 
-template <typename scalar_t, int WARP_SIZE=32, int H_OUT_PER_BLOCK=3, int W_OUT_PER_BLOCK=3>
+template <typename scalar_t, int WARP_SIZE=32, int H_OUT_PER_BLOCK=6, int W_OUT_PER_BLOCK=6>
 void conv3x3_increment_cuda_ext(
     torch::Tensor const &in_incr,
     torch::Tensor const &filter,
     torch::Tensor &out_incr  // expect a zero tensor
 ){
-
     int const out_C = out_incr.sizes()[1], out_H=out_incr.sizes()[2], out_W=out_incr.sizes()[3];
     int const in_C = in_incr.sizes()[1], in_H=in_incr.sizes()[2], in_W=in_incr.sizes()[3];
 
-
     int constexpr threads = 256;
-
-
     int const W_up = divup(out_W, W_OUT_PER_BLOCK);
     int const H_up = divup(out_H, H_OUT_PER_BLOCK);
     int const C_up = divup(out_C, threads);
-
     dim3 const blocks(W_up, H_up, C_up);
-
     int constexpr out_channels_per_block = threads;
     // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
-    conv_3x3_ext<scalar_t, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
+    conv_3x3_ext<scalar_t, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> 
+    <<<blocks, threads>>>(
         filter.data_ptr<scalar_t>(),
         in_incr.data_ptr<scalar_t>(),
         out_incr.data_ptr<scalar_t>(),

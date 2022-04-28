@@ -3,7 +3,6 @@
 #include "utils.h"
 #include "checks.h"
 
-
 //dispatch cuda kernel
 void activation_increment(
     torch::Tensor &X,
@@ -47,7 +46,7 @@ void conv3x3_increment_ext(
     torch::Tensor &out_incr  // expect a zero tensor
 ){
     CHECK_CUDA(x_incr);   //NOT CONTIGUOUS
-    CHECK_CUDA(filter);   // not contiguous;
+    CHECK_INPUT(filter);   // contiguous;
     CHECK_CUDA(out_incr); // not contiguous
 
     conv3x3_increment_ext_cuda_wrapper(

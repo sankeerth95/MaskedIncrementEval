@@ -31,7 +31,8 @@ class RandomInputHandler(InputHandler):
         self.device = device
 
     def get_single_sample(self, index: int):
-        return self.scale*torch.randn(self.shape).to(self.device)
+        return torch.randn(self.shape, device=self.device).to(memory_format=torch.channels_last)
+
 
 class ZeroInputHandler(InputHandler):
     def __init__(self, shape, device='cuda') -> None:
@@ -40,7 +41,7 @@ class ZeroInputHandler(InputHandler):
         self.device = device
 
     def get_single_sample(self, index: int):
-        return torch.zeros(self.shape).to(self.device)
+        return torch.zeros(self.shape, device=self.device)
 
 
 class SparseRandomInputHandler(RandomInputHandler):
