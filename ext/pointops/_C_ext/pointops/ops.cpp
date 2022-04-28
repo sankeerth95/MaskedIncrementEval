@@ -30,9 +30,27 @@ void conv3x3_increment(
 ){
     CHECK_INPUT(x_incr);
     CHECK_INPUT(filter);
-    CHECK_INPUT(out_incr);
+    CHECK_CUDA(out_incr); // not contiguous
 
     conv3x3_increment_cuda_wrapper(
+      x_incr,
+      filter,
+      out_incr
+    );
+}
+
+
+
+void conv3x3_increment_ext(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+){
+    CHECK_CUDA(x_incr);   //NOT CONTIGUOUS
+    CHECK_CUDA(filter);   // not contiguous;
+    CHECK_CUDA(out_incr); // not contiguous
+
+    conv3x3_increment_ext_cuda_wrapper(
       x_incr,
       filter,
       out_incr
@@ -43,6 +61,7 @@ void conv3x3_increment(
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("activation_increment", &activation_increment, "Activate and increment x tensor;");
   m.def("conv3x3_increment", &conv3x3_increment, "convolution 3x3 kernel;");
+  m.def("conv3x3_increment_ext", &conv3x3_increment_ext, "convolution 3x3 kernel;");
 }
 
 

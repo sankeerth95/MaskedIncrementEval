@@ -8,7 +8,7 @@
 // trivially copyable structs
 struct dim{
     int const C, H, W;
-    dim(c10::IntArrayRef sizes): C(sizes[0]), H(sizes[1]), W(sizes[2])
+    dim(c10::IntArrayRef sizes): C(sizes[1]), H(sizes[2]), W(sizes[3])
     {
     }
 };

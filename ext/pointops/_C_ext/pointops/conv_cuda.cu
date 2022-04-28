@@ -16,6 +16,7 @@ __device__ __forceinline__ int const get_filter_index(int const f_in, int const 
 }
 
 
+
 // padding: only 'same' padding
 // stride: 1 and 2 to be supported; only 1 works for now but very extensible
 // implement convolution as a scatter opreation
@@ -28,11 +29,11 @@ __device__ __forceinline__ void calc_field_indices(
     c_in_start = 0;
     c_in_end = in_C;
 
-    w = W_PER_BLOCK*(blockIdx.y) + threadIdx.y;
-    h = H_PER_BLOCK*(blockIdx.z) + threadIdx.z;
+    w = W_PER_BLOCK*(blockIdx.x);
+    h = H_PER_BLOCK*(blockIdx.y);
 
     // int lane_idx = threadIdx.x%WARP_SIZE;
-    c_out_start = blockIdx.x*C_PER_BLOCK_PER_WARP*WARP_SIZE + threadIdx.x;
+    c_out_start = blockIdx.z*C_PER_BLOCK_PER_WARP*WARP_SIZE + threadIdx.x;
     c_out_end = c_out_start;
 }
 
@@ -60,9 +61,10 @@ __global__ void conv3x3(
     if(h >= out_H || w >= out_W)
         return;
     // printf("cout_skip: %d\n", gridDim.x*C_OUT_PER_BLOCK_PER_WARP*WARP_SIZE);
-    for(int c_out = c_out_start; c_out < out_C; c_out += gridDim.x*C_OUT_PER_BLOCK_PER_WARP*WARP_SIZE){
-        int x_id = c_out*out_H*out_W + h*out_W + w;
-        scalar_t *out_ptr = &out[x_id];       // assumes initialized to 0
+    for(int c_out = c_out_start; c_out < out_C; c_out += gridDim.z*C_OUT_PER_BLOCK_PER_WARP*WARP_SIZE){
+        int x_id = h*out_W*out_C + w*out_C + c_out;  // channel contiguous;
+        scalar_t *out_ptr = &out[x_id];
+        *out_ptr = 0; // initialized to 0
 
         // loop through c_ins
         for(int c_in = c_in_start; c_in < c_in_end ; c_in += 1){
@@ -72,7 +74,7 @@ __global__ void conv3x3(
             if(!skip){
                 scalar_t const *in_ptr = x + c_in*in_H*in_W;
                 for(int i = 0; i < 9; i++){
-                    int h_in = (h-1 + i/3);
+                    int h_in = h-1 + i/3;
                     int w_in = w-1 + (i%3);
                     if (h_in >= 0 && h_in < in_H && w_in >= 0 && w_in < in_W)
                         *out_ptr += conv_filter[get_filter_index<3,3>(in_C, out_C, c_in, c_out, i)] *
@@ -97,8 +99,8 @@ void conv3x3_increment_cuda(
     int const H_up = divup(out_dim.H, H_OUT_PER_BLOCK);
     int const C_up = divup(out_dim.C, C_OUT_PER_BLOCK_PER_WARP*WARP_SIZE);
 
-    dim3 const blocks(C_up, W_up, H_up);
-    dim3 const threads(WARP_SIZE*C_OUT_PER_BLOCK_PER_WARP, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK);
+    dim3 const blocks(W_up, H_up, C_up);
+    dim3 const threads(WARP_SIZE*C_OUT_PER_BLOCK_PER_WARP);
 
     // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
 
@@ -120,7 +122,7 @@ void conv3x3_increment_cuda_wrapper(
     torch::Tensor &out_incr  // expect a zero tensor
 ){
 
-    conv3x3_increment_cuda<float, 32, 2, 6, 6>(
+    conv3x3_increment_cuda<float, 32, 3, 6, 6>(
         in_incr,
         filter,
         out_incr  // expect a zero tensor
