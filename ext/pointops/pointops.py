@@ -46,13 +46,13 @@ def convert_filter_out_channels_last(filter, transposed=False):
 
 class Conv3x3Incr(IncrementMaskModule):
 
-    def __init__(self, c_in, c_out, weight, padding=0, device='cuda'):
+    def __init__(self, in_shape, c_in, c_out, weight, padding=0, device='cuda'):
         super().__init__()
         self.weight = weight
         self.weight_t = convert_filter_out_channels_last(weight)
         self.c_in = c_in
         self.c_out = c_out
-        self.mask = torch.rand(32, device=device).le(.6)
+        self.mask = torch.rand(in_shape, device=device).le(1.)
 
     # expects nhwc tensor
     def forward(self, x_incr):

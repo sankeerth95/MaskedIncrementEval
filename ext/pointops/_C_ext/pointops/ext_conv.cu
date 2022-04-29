@@ -63,6 +63,7 @@ __global__ void conv_3x3_ext(
 
     union SMEM {
         // SparseSMEM sparse;
+        bool mask_s_in[n_in_px_aligned][WARP_SIZE]; //bitwise operations wover WARP_SIZE: implement later
         scalar_t dense_s_in[n_in_px_aligned][WARP_SIZE];
     };
     __shared__ SMEM smem;
@@ -88,8 +89,10 @@ __global__ void conv_3x3_ext(
                     const int in_y_im = in_y + tile_start_in_y;
                     const int in_x_im = in_x + tile_start_in_x; 
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
+                    // smem.mask_s_in[in_y * w_in + in_x][lane_idx] = mask[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
                 } else {
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = 0.0f;
+                    // smem.mask_s_in[in_y * w_in + in_x][lane_idx] = true;
                 }
             }
             // int const lane_idx = threadIdx.x % WARP_SIZE;
@@ -99,40 +102,91 @@ __global__ void conv_3x3_ext(
 
             // sequential af. : can skip a part of this with the sequential mask. But before we actually do that; have alook oncemore
             for(int in_c = 0; in_c < WARP_SIZE && in_c + in_c_off < in_C; ++in_c) {
-                const scalar_t *in_c_filter = &filter[(in_c_off+in_c) * 9 * out_C + out_c];
 
-                if(mask[in_c]) continue;
-
-                scalar_t t_f[9];
-                #pragma unroll
-                for(int f_y = 0; f_y < 3; ++f_y) {
-                    #pragma unroll
-                    for(int f_x = 0; f_x < 3; ++f_x) { 
-                        t_f[f_y*3 + f_x] = in_c_filter[((2-f_y) * 3 + 2 - f_x) * out_C];
-                    }
-                }
                 if (out_c < out_C) {
+
+
+                    //gather operation
+
+                    const scalar_t *in_c_filter = &filter[(in_c_off+in_c) * 9 * out_C + out_c];
+
                     #pragma unroll
-                    for (int in_y = -1; in_y < h_in -1; ++in_y) {
+                    for(int out_y = 0; out_y < pixelsPerBlockY; out_y++ ){
                         #pragma unroll
-                        for (int in_x = -1; in_x < w_in -1; ++in_x) {
+                        for(int out_x = 0; out_x < pixelsPerBlockY; out_x++){
 
-                            const scalar_t val = smem.dense_s_in[(in_y + 1) * w_in + (in_x + 1)][in_c];
+                            // check mask here
 
-                            const int min_f_y = -in_y;
-                            const int min_f_x = -in_x;
-                            const int max_f_y = h_in - in_y - 3;
-                            const int max_f_x = w_in - in_x - 3;
-
+                            scalar_t vals[9];
                             #pragma unroll
-                            for (int f_y = Utils::constexpr_max(-1 , min_f_y); f_y <= Utils::constexpr_min(1, max_f_y); f_y += 1) {
+                            for(int f_y = 0; f_y < 3; ++f_y) {
                                 #pragma unroll
-                                for (int f_x = Utils::constexpr_max(-1 , min_f_x); f_x <= Utils::constexpr_min(1, max_f_x); f_x += 1) {
-                                    t_out[(in_y+f_y) * pixelsPerBlockX + (in_x+f_x)] += val * t_f[(f_y+1)*3 + f_x+1];
+                                for(int f_x = 0; f_x < 3; ++f_x) { 
+                                    vals[f_y*3 + f_x] = smem.dense_s_in[f_y*w_in + f_x][in_c];
                                 }
                             }
+
+
+
+                            scalar_t *out_val = &t_out[out_y* pixelsPerBlockX + out_x];
+                            *out_val = 0.0f;
+
+                            #pragma unroll
+                            for(int in_y = 0; in_y < 3; in_y++){
+                                #pragma unroll
+                                for(int in_x = 0; in_x < 3; in_x++){
+
+                                    // smem.dense()
+                                    *out_val += vals[3*in_y + in_x]*in_c_filter[3*in_y + in_x];
+
+                                }
+
+                            }
+
                         }
                     }
+
+
+                    // scatter b0ss
+
+                    // const scalar_t *in_c_filter = &filter[(in_c_off+in_c) * 9 * out_C + out_c];
+                    // scalar_t t_f[9];
+                    // #pragma unroll
+                    // for(int f_y = 0; f_y < 3; ++f_y) {
+                    //     #pragma unroll
+                    //     for(int f_x = 0; f_x < 3; ++f_x) { 
+                    //         t_f[f_y*3 + f_x] = in_c_filter[((2-f_y) * 3 + 2 - f_x) * out_C];
+                    //     }
+                    // }
+
+
+
+                    // #pragma unroll
+                    // for (int in_y = -1; in_y < h_in -1; ++in_y) {
+                    //     #pragma unroll
+                    //     for (int in_x = -1; in_x < w_in -1; ++in_x) {
+
+                    //         // const bool maskval = smem.mask_s_in[(in_y + 1) * w_in + (in_x + 1)][in_c];
+                    //         // if(maskval)
+                    //         //     continue;tf*smem.dense_s_in[in_y * w_in + (in_x)][in_c];
+                    //         const scalar_t val = smem.dense_s_in[(in_y + 1) * w_in + (in_x + 1)][in_c];
+
+
+
+                    //         const int min_f_y = -in_y;
+                    //         const int min_f_x = -in_x;
+                    //         const int max_f_y = h_in - in_y - 3;
+                    //         const int max_f_x = w_in - in_x - 3;
+
+                    //         #pragma unroll
+                    //         for (int f_y = Utils::constexpr_max(-1 , min_f_y); f_y <= Utils::constexpr_min(1, max_f_y); f_y += 1) {
+                    //             #pragma unroll
+                    //             for (int f_x = Utils::constexpr_max(-1 , min_f_x); f_x <= Utils::constexpr_min(1, max_f_x); f_x += 1) {
+                    //                 t_out[(in_y+f_y) * pixelsPerBlockX + (in_x+f_x)] += val * t_f[(f_y+1)*3 + f_x+1]; // scatter operation b0ss?
+                    //             }
+                    //         }
+                    //     }
+                    // }
                 }
             }
         }
