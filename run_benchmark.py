@@ -18,11 +18,6 @@ def run_sequence_of_deltaconv_sparse_benchmarks():
 
 
 
-
-
-
-
-
 def compare_conv_with_network_shapes(compare_benchmarks):
 
     # print(compare_benchmarks(in_shape=(1, 5, 264, 352),     shape=(5, 32),      k=5))

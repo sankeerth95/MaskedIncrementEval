@@ -27,7 +27,7 @@ def benchmark_conv(in_shape, shape=(32, 64), k=3, stride=1):
     input_h = RandomInputHandler(in_shape, device=device)
     model_h = Conv2dBaseline(shape, kernel=k, device=device)
     benchmark = BenchmarkNetwork(input_h, model_h)
-    return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
+    return benchmark.benchmark(maxiter=40, save_profiler_data=True, print_profiler_data=False)
 
 
 

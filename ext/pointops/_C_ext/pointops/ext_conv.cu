@@ -18,21 +18,17 @@ namespace Utils{
 
 // compete with this impelemntation
 template<int pixelsPerBlockX, int pixelsPerBlockY, int OUT_CHANNELS_PER_BLOCK, bool FULL_DEPTH>
-__device__ __forceinline__ void calc_tile_indices(int& tile_start_out_y, int& tile_start_out_x, int& tile_start_in_y, int& tile_start_in_x, int& tile_start_z, int& batch, const int out_C) {
+__device__ __forceinline__ void calc_tile_indices(
+    int& tile_start_out_y, int& tile_start_out_x, int& tile_start_in_y, int& tile_start_in_x, int& tile_start_z, int& batch, const int out_C) {
 
     tile_start_out_y = blockIdx.y * pixelsPerBlockY;
     tile_start_out_x = blockIdx.x * pixelsPerBlockX;
     tile_start_in_y = tile_start_out_y  - 1; // minus padding which is 1
     tile_start_in_x = tile_start_out_x  - 1; // minus padding which is 1
 
-    if (FULL_DEPTH) {
-        tile_start_z = 0;
-        batch = 0;//blockIdx.z;
-    } else {
-        const int blocksPerBatch = divup(out_C, OUT_CHANNELS_PER_BLOCK);
-        tile_start_z = (blockIdx.z % blocksPerBatch) * OUT_CHANNELS_PER_BLOCK;
-        batch = blockIdx.z / blocksPerBatch;
-    }
+    const int blocksPerBatch = divup(out_C, OUT_CHANNELS_PER_BLOCK);
+    tile_start_z = (blockIdx.z % blocksPerBatch) * OUT_CHANNELS_PER_BLOCK;
+    batch = blockIdx.z / blocksPerBatch;
 }
 
 
@@ -57,8 +53,7 @@ __global__ void conv_3x3_ext(
 
     const int w_in = pixelsPerBlockX + 2;
     const int h_in = pixelsPerBlockY + 2;
-    const int n_in_px = w_in * h_in;
-    const int n_in_px_aligned = divup(n_in_px, 4) * 4;
+    const int n_in_px_aligned = divup(w_in * h_in, 4) * 4;
 
 
     const int lane_idx = threadIdx.x % WARP_SIZE;
@@ -73,7 +68,7 @@ __global__ void conv_3x3_ext(
     __shared__ SMEM smem;
 
     // TODO fix dilation and striding for sparse version
-    for (int out_c_off = tile_start_z; out_c_off < out_C; out_c_off += BLOCK_SIZE) {
+    for (int out_c_off = tile_start_z; out_c_off < tile_start_z + OUT_CHANNELS_PER_BLOCK; out_c_off += BLOCK_SIZE) {
         const int out_c = out_c_off + threadIdx.x; // parallelization across channels
         scalar_t t_out[pixelsPerBlockX * pixelsPerBlockY];
         #pragma unroll
@@ -83,8 +78,6 @@ __global__ void conv_3x3_ext(
 
         for (int in_c_off = 0; in_c_off < in_C; in_c_off += WARP_SIZE) {
             __syncthreads();
-            // int const lane_idx = threadIdx.x % WARP_SIZE;
-            // int const warp_idx = threadIdx.x/WARP_SIZE;
             for (int px_idx = warp_idx; px_idx < w_in * h_in; px_idx += n_warps) {
                 const int in_y = px_idx / w_in; 
                 const int in_x = px_idx % w_in;
@@ -99,6 +92,8 @@ __global__ void conv_3x3_ext(
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = 0.0f;
                 }
             }
+            // int const lane_idx = threadIdx.x % WARP_SIZE;
+            // int const warp_idx = threadIdx.x/WARP_SIZE;
             __syncthreads();
 
 
@@ -177,10 +172,9 @@ void conv3x3_increment_cuda_ext(
     int const H_up = divup(out_H, H_OUT_PER_BLOCK);
     int const C_up = divup(out_C, threads);
     dim3 const blocks(W_up, H_up, C_up);
-    int constexpr out_channels_per_block = threads;
+    int constexpr out_channels_per_block = 32;
     // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
-    conv_3x3_ext<scalar_t, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> 
-    <<<blocks, threads>>>(
+    conv_3x3_ext<scalar_t, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
         filter.data_ptr<scalar_t>(),
         mask.data_ptr<bool>(),
         in_incr.data_ptr<scalar_t>(),
@@ -193,7 +187,6 @@ void conv3x3_increment_cuda_ext(
 }
 
 
-
 void conv3x3_increment_ext_cuda_wrapper(
     torch::Tensor const &in_incr,
     torch::Tensor const &mask,
@@ -201,7 +194,7 @@ void conv3x3_increment_ext_cuda_wrapper(
     torch::Tensor &out_incr  // empty tensor;
 ){
 
-    conv3x3_increment_cuda_ext<float, 32, 6, 6>(
+    conv3x3_increment_cuda_ext<float, 32, 4, 8>(
         in_incr,
         mask,
         filter,

@@ -52,7 +52,7 @@ class Conv3x3Incr(IncrementMaskModule):
         self.weight_t = convert_filter_out_channels_last(weight)
         self.c_in = c_in
         self.c_out = c_out
-        self.mask = torch.rand(32, device=device).ge(0.5)
+        self.mask = torch.rand(32, device=device).le(.6)
 
     # expects nhwc tensor
     def forward(self, x_incr):

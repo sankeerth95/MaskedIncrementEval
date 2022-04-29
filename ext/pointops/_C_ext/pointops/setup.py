@@ -20,8 +20,8 @@ setup(
             sources=_srcfiles,
             include_dirs=[_header_dir],
             extra_compile_args={
-                'cxx': ['-O3', '-ffast-math'],
-                'nvcc': ['-O3']
+                'cxx': ['-O3', '-ffast-math', '-DNDEBUG'],
+                'nvcc': ['-O3', '-DNDEBUG']
             }
         )
     ],
