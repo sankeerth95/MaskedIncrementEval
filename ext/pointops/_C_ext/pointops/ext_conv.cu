@@ -114,15 +114,16 @@ __global__ void conv_3x3_ext(
                     for(int out_y = 0; out_y < pixelsPerBlockY; out_y++ ){
                         #pragma unroll
                         for(int out_x = 0; out_x < pixelsPerBlockY; out_x++){
-
-                            // check mask here
+                            // there's an unchecked pragma
+                            // smem.mask_s_in
+                            // smem[]
 
                             scalar_t vals[9];
                             #pragma unroll
                             for(int f_y = 0; f_y < 3; ++f_y) {
                                 #pragma unroll
                                 for(int f_x = 0; f_x < 3; ++f_x) { 
-                                    vals[f_y*3 + f_x] = smem.dense_s_in[f_y*w_in + f_x][in_c];
+                                    vals[f_y*3 + f_x] = smem.dense_s_in[(out_y + f_y)*w_in + (out_x + f_x)][in_c];
                                 }
                             }
 
