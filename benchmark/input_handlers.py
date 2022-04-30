@@ -121,6 +121,19 @@ class IncrDatasetInputHandler(DatasetInputHandler, IncrInputHandler):
         self.prev_x = x
         return input_
 
+class IncrDatasetInputHandler_2args(DatasetInputHandler, IncrInputHandler):
+    def __init__(self, start_index = 0, device='cuda'):
+        super().__init__(start_index, device)
+        self.prev_x = (self.get_data_i(start_index), None)
+
+    def get_single_sample(self, index):
+        x = self.get_data_i(self.start_index + index)
+        input_ = x-self.prev_x[0]
+        self.prev_x = (x, None)
+        return input_, None
+
+
+
 class BaselineInputHandler(DatasetInputHandler):
     def __init__(self, start_index = 0, device='cuda'):
         super().__init__(start_index, device)

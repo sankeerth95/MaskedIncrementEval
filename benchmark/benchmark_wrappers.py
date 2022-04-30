@@ -1,13 +1,13 @@
 from benchmark.model_getter import ModelGetter
 from benchmark.model_handlers import IncrModelHandler, BaselineModelhandler
-from benchmark.input_handlers import IncrDatasetInputHandler, RandomInputHandler, SparseRandomInputHandler, StructurallySparseRandomInputHandlerNCHW
+from benchmark.input_handlers import IncrDatasetInputHandler, IncrDatasetInputHandler_2args, RandomInputHandler, SparseRandomInputHandler, StructurallySparseRandomInputHandlerNCHW
 from benchmark.operations import ActivationHandler, ActivationIncrHandler, Conv2dBaseline, Conv3x3IncrBaseline
 from benchmark.ops_benchmark import BenchmarkNetwork
 from metrics.structural_sparsity import field_channel_sparsity
 
 def benchmark_e2vid_incr(pth=None):
     device = 'cuda'
-    input_h = IncrDatasetInputHandler(start_index=10, device=device)
+    input_h = IncrDatasetInputHandler_2args(start_index=10, device=device)
     op = ModelGetter.get_e2vid_incr_model(pth).to(device)    
     model_h = IncrModelHandler(op, prev_x_input=input_h.prev_x)
     benchmark = BenchmarkNetwork(input_h, model_h)

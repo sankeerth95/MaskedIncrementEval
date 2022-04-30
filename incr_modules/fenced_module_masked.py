@@ -801,11 +801,13 @@ class E2VIDRecurrentIncr(BaseE2VID, IncrementMaskModule):
                                            norm=self.norm,
                                            use_upsample_conv=self.use_upsample_conv)
 
-    def forward(self, event_tensor: Sp, prev_states: Union[SpOrDense, None]) -> Sp:
+    def forward(self, input_sample: Masked):
+        event_tensor, prev_states = input_sample
         img_pred, states = self.unetrecurrent.forward(event_tensor, prev_states)
         return img_pred, states
 
-    def forward_refresh_reservoirs(self, event_tensor, prev_states):
+    def forward_refresh_reservoirs(self, input_sample):
+        event_tensor, prev_states = input_sample
         img_pred, states = self.unetrecurrent.forward_refresh_reservoirs(event_tensor, prev_states)
         return img_pred, states
 

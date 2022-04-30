@@ -36,7 +36,6 @@ template<typename scalar_t=float, int WARP_SIZE=32, int pixelsPerBlockX=6, int p
 __device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar_t const dense_s_in[][WARP_SIZE], bool const smem_mask[][WARP_SIZE], int out_c, int out_C, int in_c, int in_C, int h_in, int w_in){
                     //gather operation
 
-    // const scalar_t *in_c_filter = &filter[(in_c_off+in_c) * 9 * out_C + out_c];
 
     #pragma unroll
     for(int out_y = 0; out_y < pixelsPerBlockY; out_y++ ){
@@ -168,6 +167,7 @@ __global__ void conv_3x3_ext(
             t_out[i] = 0.0f;
         }
 
+
         for (int in_c_off = 0; in_c_off < in_C; in_c_off += WARP_SIZE) {
             __syncthreads();
             for (int px_idx = warp_idx; px_idx < w_in * h_in; px_idx += n_warps) {
@@ -175,7 +175,6 @@ __global__ void conv_3x3_ext(
                 const int in_x = px_idx % w_in;
                 const int in_c = in_c_off + lane_idx;
                 const bool valid = in_c < in_C;
-
                 if (valid) {
                     const int in_y_im = in_y + tile_start_in_y;
                     const int in_x_im = in_x + tile_start_in_x; 
@@ -186,26 +185,27 @@ __global__ void conv_3x3_ext(
                     smem.mask_s_in[in_y * w_in + in_x][lane_idx] = true;
                 }
             }
-            // int const lane_idx = threadIdx.x % WARP_SIZE;
-            // int const warp_idx = threadIdx.x/WARP_SIZE;
             __syncthreads();
+
+
 
 
             // sequential af. : can skip a part of this with the sequential mask. But before we actually do that; have alook oncemore
             for(int in_c = 0; in_c < WARP_SIZE && in_c + in_c_off < in_C; ++in_c) {
 
+                // do not evaluate for the whole block: 
+                if(mask[tile_start_in_y * in_W * in_C + tile_start_in_x * in_C + in_c])
+                    continue;
+
+
                 if (out_c < out_C) {
-
-                    // gather_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(filter, tout, smem.dense_s_in, smem.mask_s_in, out_c, outC, in_c, in_C);
-                    // scatter_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
-                    //     &filter[(in_c_off+in_c) * 9 * out_C + out_c], 
-                    //     t_out, smem.dense_s_in, smem.mask_s_in, out_c, out_C, in_c, in_C, h_in, w_in);
-
-                    gather_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
+                    scatter_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
                         &filter[(in_c_off+in_c) * 9 * out_C + out_c], 
                         t_out, smem.dense_s_in, smem.mask_s_in, out_c, out_C, in_c, in_C, h_in, w_in);
 
-                    // scatter_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>();
+                    // gather_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
+                    //     &filter[(in_c_off+in_c) * 9 * out_C + out_c], 
+                    //     t_out, smem.dense_s_in, smem.mask_s_in, out_c, out_C, in_c, in_C, h_in, w_in);
 
                 }
             }
@@ -268,7 +268,7 @@ void conv3x3_increment_ext_cuda_wrapper(
     torch::Tensor &out_incr  // empty tensor;
 ){
 
-    conv3x3_increment_cuda_ext<float, 32, 8, 4>(
+    conv3x3_increment_cuda_ext<float, 32, 4, 6>(
         in_incr,
         mask,
         filter,
