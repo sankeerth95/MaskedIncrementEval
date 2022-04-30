@@ -4,16 +4,27 @@
 #include "checks.h"
 
 
+namespace Utils{
+    template <typename T>
+    constexpr T constexpr_min(const T a, const T b) {
+        return a > b ? b : a;
+    }
+    template <typename T>
+    constexpr T constexpr_max(const T a, const T b) {
+        return a < b ? b : a;
+    }
+};
+
+
 // compete with this impelemntation
-template<int KERNEL_SIZE=3, int pixelsPerBlockX, int pixelsPerBlockY, int OUT_CHANNELS_PER_BLOCK, bool FULL_DEPTH>
+template<int pixelsPerBlockX, int pixelsPerBlockY, int OUT_CHANNELS_PER_BLOCK, bool FULL_DEPTH>
 __device__ __forceinline__ void calc_tile_indices(
     int& tile_start_out_y, int& tile_start_out_x, int& tile_start_in_y, int& tile_start_in_x, int& tile_start_z, int& batch, const int out_C) {
 
-    constexpr int PAD_LENGTH = KERNEL_SIZE/2;
     tile_start_out_y = blockIdx.y * pixelsPerBlockY;
     tile_start_out_x = blockIdx.x * pixelsPerBlockX;
-    tile_start_in_y = tile_start_out_y  - PAD_LENGTH; // minus padding which is 1
-    tile_start_in_x = tile_start_out_x  - PAD_LENGTH; // minus padding which is 1
+    tile_start_in_y = tile_start_out_y  - 1; // minus padding which is 1
+    tile_start_in_x = tile_start_out_x  - 1; // minus padding which is 1
 
     const int blocksPerBatch = divup(out_C, OUT_CHANNELS_PER_BLOCK);
     tile_start_z = (blockIdx.z % blocksPerBatch) * OUT_CHANNELS_PER_BLOCK;
@@ -21,11 +32,10 @@ __device__ __forceinline__ void calc_tile_indices(
 }
 
 
-template<typename scalar_t=float, int KERNEL_SIZE=3, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
-__device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar_t const dense_s_in[][WARP_SIZE], bool const smem_mask[][WARP_SIZE], 
-                            int out_c, int out_C, int in_c, int in_C, int h_in, int w_in){
+template<typename scalar_t=float, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
+__device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar_t const dense_s_in[][WARP_SIZE], bool const smem_mask[][WARP_SIZE], int out_c, int out_C, int in_c, int in_C, int h_in, int w_in){
+                    //gather operation
 
-    int constexpr PAD_LENGTH = KERNEL_SIZE/2;
 
     #pragma unroll
     for(int out_y = 0; out_y < pixelsPerBlockY; out_y++ ){
@@ -36,13 +46,13 @@ __device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar
             // if( smem_mask[WARP_SIZE*((out_y + 1)*w_in + out_x + 1) + in_c] )
             //     continue;
 
-            scalar_t vals[KERNEL_SIZE*KERNEL_SIZE];
+            scalar_t vals[9];
             #pragma unroll
-            for(int f_y = 0; f_y < KERNEL_SIZE; ++f_y) {
+            for(int f_y = 0; f_y < 3; ++f_y) {
                 #pragma unroll
-                for(int f_x = 0; f_x < KERNEL_SIZE; ++f_x) { 
+                for(int f_x = 0; f_x < 3; ++f_x) { 
                     // this memory access load itself brings 2X speed to 1X speed :/
-                    vals[f_y*KERNEL_SIZE + f_x] = dense_s_in[(out_y + f_y)*w_in + out_x + f_x][in_c];
+                    vals[f_y*3 + f_x] = dense_s_in[(out_y + f_y)*w_in + out_x + f_x][in_c];
                 }
             }
 
@@ -50,11 +60,13 @@ __device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar
             *out_val = 0.0f;
 
             #pragma unroll
-            for(int in_y = 0; in_y < KERNEL_SIZE; in_y++){
+            for(int in_y = 0; in_y < 3; in_y++){
                 #pragma unroll
-                for(int in_x = 0; in_x < KERNEL_SIZE; in_x++){
-                   // smem.dense()
-                    *out_val += vals[KERNEL_SIZE*in_y + in_x]*in_c_filter[KERNEL_SIZE*in_y + in_x];
+                for(int in_x = 0; in_x < 3; in_x++){
+
+                    // smem.dense()
+                    *out_val += vals[3*in_y + in_x]*in_c_filter[3*in_y + in_x];
+
                 }
 
             }
@@ -65,42 +77,41 @@ __device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar
 
 
 
-template<typename scalar_t=float, int KERNEL_SIZE=3, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
+
+
+template<typename scalar_t=float, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
 __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar_t const dense_s_in[][WARP_SIZE], bool const smem_mask[][WARP_SIZE], int out_c, int out_C, int in_c, int in_C ,int h_in, int w_in){
 
-    scalar_t t_f[KERNEL_SIZE*KERNEL_SIZE];
-    constexpr int PAD_LENGTH = KERNEL_SIZE/2;
-
+    scalar_t t_f[9];
     #pragma unroll
-    for(int f_y = 0; f_y < KERNEL_SIZE; ++f_y) {
+    for(int f_y = 0; f_y < 3; ++f_y) {
         #pragma unroll
-        for(int f_x = 0; f_x < KERNEL_SIZE; ++f_x) { 
-            t_f[f_y*KERNEL_SIZE + f_x] = in_c_filter[((KERNEL_SIZE - 1 -f_y) * KERNEL_SIZE + KERNEL_SIZE - 1 - f_x) * out_C];
+        for(int f_x = 0; f_x < 3; ++f_x) { 
+            t_f[f_y*3 + f_x] = in_c_filter[((2-f_y) * 3 + 2 - f_x) * out_C];
         }
     }
 
 
     #pragma unroll
-    for (int in_y = -PAD_LENGTH; in_y < h_in -PAD_LENGTH; ++in_y) {
+    for (int in_y = -1; in_y < h_in -1; ++in_y) {
         #pragma unroll
-        for (int in_x = -PAD_LENGTH; in_x < w_in -PAD_LENGTH; ++in_x) {
+        for (int in_x = -1; in_x < w_in -1; ++in_x) {
 
             // const bool maskval = smem.mask_s_in[(in_y + 1) * w_in + (in_x + 1)][in_c];
             // if(maskval)
             //     continue;tf*smem.dense_s_in[in_y * w_in + (in_x)][in_c];
-            const scalar_t val = dense_s_in[(in_y + PAD_LENGTH) * w_in + in_x + PAD_LENGTH][in_c];
+            const scalar_t val = dense_s_in[(in_y + 1) * w_in + in_x + 1][in_c];
 
             const int min_f_y = -in_y;
             const int min_f_x = -in_x;
             const int max_f_y = h_in - in_y - 3;
             const int max_f_x = w_in - in_x - 3;
 
-
             #pragma unroll
-            for (int f_y = Utils::constexpr_max(-PAD_LENGTH , min_f_y); f_y <= Utils::constexpr_min(PAD_LENGTH, max_f_y); f_y += 1) {
+            for (int f_y = Utils::constexpr_max(-1 , min_f_y); f_y <= Utils::constexpr_min(1, max_f_y); f_y += 1) {
                 #pragma unroll
-                for (int f_x = Utils::constexpr_max(-PAD_LENGTH , min_f_x); f_x <= Utils::constexpr_min(PAD_LENGTH, max_f_x); f_x += 1) {
-                    t_out[(in_y+f_y) * pixelsPerBlockX + (in_x+f_x)] += val * t_f[(f_y+PAD_LENGTH)*KERNEL_SIZE + f_x+1]; // scatter operation b0ss?
+                for (int f_x = Utils::constexpr_max(-1 , min_f_x); f_x <= Utils::constexpr_min(1, max_f_x); f_x += 1) {
+                    t_out[(in_y+f_y) * pixelsPerBlockX + (in_x+f_x)] += val * t_f[(f_y+1)*3 + f_x+1]; // scatter operation b0ss?
                 }
             }
         }
@@ -110,8 +121,9 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
 
 
 
-template<typename scalar_t=float, int KERNEL_SIZE=3, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6, int OUT_CHANNELS_PER_BLOCK=256, int BLOCK_SIZE=OUT_CHANNELS_PER_BLOCK>
-__global__ void conv_KXK_ext(
+
+template<typename scalar_t=float, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6, int OUT_CHANNELS_PER_BLOCK=256, int BLOCK_SIZE=OUT_CHANNELS_PER_BLOCK>
+__global__ void conv_3x3_ext(
     const scalar_t* __restrict__ filter, //channel at the end;
     const bool*__restrict__ mask,
     const scalar_t* __restrict__ input,  // NHWC
@@ -119,7 +131,6 @@ __global__ void conv_KXK_ext(
     int const in_C, int const in_H, int const in_W,
     int const out_C, int const out_H, int const out_W
 ) {
-    constexpr int PAD_LENGTH = KERNEL_SIZE/2;
 
     // true for full depth
     int tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch;
@@ -130,9 +141,8 @@ __global__ void conv_KXK_ext(
     scalar_t* batch_out = output + (batch * out_H * out_W * out_C);
     const scalar_t* batch_in = input + (batch * in_H * in_W * in_C);
 
-    const int w_in = pixelsPerBlockX + 2*PAD_LENGTH;
-    const int h_in = pixelsPerBlockY + 2*PAD_LENGTH;
-
+    const int w_in = pixelsPerBlockX + 2;
+    const int h_in = pixelsPerBlockY + 2;
     const int n_in_px_aligned = divup(w_in * h_in, 4) * 4;
 
 
@@ -177,15 +187,20 @@ __global__ void conv_KXK_ext(
             }
             __syncthreads();
 
+
+
+
+            // sequential af. : can skip a part of this with the sequential mask. But before we actually do that; have alook oncemore
             for(int in_c = 0; in_c < WARP_SIZE && in_c + in_c_off < in_C; ++in_c) {
 
                 // do not evaluate for the whole block: 
                 if(mask[tile_start_in_y * in_W * in_C + tile_start_in_x * in_C + in_c])
                     continue;
 
+
                 if (out_c < out_C) {
                     scatter_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
-                        &filter[(in_c_off+in_c) * KERNEL_SIZE*KERNEL_SIZE * out_C + out_c], 
+                        &filter[(in_c_off+in_c) * 9 * out_C + out_c], 
                         t_out, smem.dense_s_in, smem.mask_s_in, out_c, out_C, in_c, in_C, h_in, w_in);
 
                     // gather_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
@@ -233,7 +248,7 @@ void conv3x3_increment_cuda_ext(
     dim3 const blocks(W_up, H_up, C_up);
     int constexpr out_channels_per_block = 32;
     // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
-    conv_KXK_ext<scalar_t, 3, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
+    conv_3x3_ext<scalar_t, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
         filter.data_ptr<scalar_t>(),
         mask.data_ptr<bool>(),
         in_incr.data_ptr<scalar_t>(),
@@ -244,8 +259,6 @@ void conv3x3_increment_cuda_ext(
 
     CUDA_CHECK_ERRORS();
 }
-
-
 
 
 void conv3x3_increment_ext_cuda_wrapper(
