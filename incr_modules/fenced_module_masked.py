@@ -12,10 +12,11 @@ from typing import overload, Union
 from metrics.structural_sparsity import field_channel_sparsity
 
 
-k_init = 0.1
+k_init = 0.01
 def print_sparsity(x, prefix: str = ""):
     return
     print(prefix, float(field_channel_sparsity(x, field_size=5, threshold=k_init).cpu().numpy())  )
+
 
 # singleton class; not the best way but whatev
 class AccumStreamManager:
@@ -46,9 +47,10 @@ class IncrementReserve:
 
     # dense/sparse accumulate accumulate
     def accumulate(self, incr: Masked):
-        return
-        with torch.cuda.stream(self.accum_stream.get_stream()):
-            self.reservoir.add_(incr)
+        self.reservoir.add_(incr)
+        # return
+        # with torch.cuda.stream(self.accum_stream.get_stream()):
+        #     self.reservoir.add_(incr)
 
     def update_reservoir(self, x: torch.Tensor):
         self.reservoir = x.clone().detach() # not in place right now :(
