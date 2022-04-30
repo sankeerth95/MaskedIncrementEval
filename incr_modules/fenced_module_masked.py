@@ -94,8 +94,8 @@ class KFencedMaskModule(IncrementMaskModule):
         return x
 
 def IncrPointwiseMultiply(x1_incr: SpOrDense, x1: IncrementReserve, x2_incr, x2: IncrementReserve):
-    return x1_incr
-    return x1_incr*x2_incr + x2.reservoir*x1_incr + x1.reservoir*x2_incr
+    # return x1_incr
+    return x1_incr*x2_incr + x2.reservoir*x1_incr + x1.reservoir*x2_incr    # good luck with this shit.
 
 class PointwiseMultiplyIncr(IncrementMaskModule):
     def __init__(self, x1res_module: IncrementReserve, x2res_module: IncrementReserve):
