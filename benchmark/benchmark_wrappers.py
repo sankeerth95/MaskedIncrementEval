@@ -8,7 +8,8 @@ def benchmark_e2vid_incr(pth=None):
     device = 'cuda'
     input_h = IncrDatasetInputHandler_2args(start_index=10, device=device)
     op = ModelGetter.get_e2vid_incr_model(pth).to(device)    
-    model_h = IncrModelHandler(op, prev_x_input=input_h.prev_x)
+    model_h = IncrModelHandler(op)
+    model_h.refresh(input_h.prev_x)
     benchmark = BenchmarkNetwork(input_h, model_h)
     return benchmark.benchmark(maxiter=40, save_profiler_data=True, print_profiler_data=True)
 

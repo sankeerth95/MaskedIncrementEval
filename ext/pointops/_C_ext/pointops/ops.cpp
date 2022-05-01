@@ -1,5 +1,6 @@
 #include <c10/cuda/CUDAStream.h>
 #include "ops.h"
+#include "conv_wrappers.h"
 #include "utils.h"
 #include "checks.h"
 
@@ -22,23 +23,6 @@ void activation_increment(
 }
 
 
-void conv3x3_increment(
-    torch::Tensor const &x_incr,
-    torch::Tensor const &filter,
-    torch::Tensor &out_incr  // expect a zero tensor
-){
-    CHECK_INPUT(x_incr);
-    CHECK_INPUT(filter);
-    CHECK_CUDA(out_incr); // not contiguous
-
-    conv3x3_increment_cuda_wrapper(
-      x_incr,
-      filter,
-      out_incr
-    );
-}
-
-
 
 void conv3x3_increment_ext(
     torch::Tensor const &x_incr,
@@ -51,7 +35,7 @@ void conv3x3_increment_ext(
     CHECK_INPUT(filter);   // contiguous;
     CHECK_CUDA(out_incr); // not contiguous
 
-    conv3x3_increment_ext_cuda_wrapper(
+    convkxk_increment_ext_cuda_wrapper(
       x_incr,
       mask,
       filter,
@@ -62,7 +46,6 @@ void conv3x3_increment_ext(
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("activation_increment", &activation_increment, "Activate and increment x tensor;");
-  m.def("conv3x3_increment", &conv3x3_increment, "convolution 3x3 kernel;");
   m.def("conv3x3_increment_ext", &conv3x3_increment_ext, "convolution 3x3 kernel;");
 }
 

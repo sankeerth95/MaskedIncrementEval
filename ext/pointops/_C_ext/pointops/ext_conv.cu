@@ -111,7 +111,7 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
 
 
 template<typename scalar_t=float, int KERNEL_SIZE=3, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6, int OUT_CHANNELS_PER_BLOCK=256, int BLOCK_SIZE=OUT_CHANNELS_PER_BLOCK>
-__global__ void conv_KXK_ext(
+__global__ void conv_kxk_ext(
     const scalar_t* __restrict__ filter, //channel at the end;
     const bool*__restrict__ mask,
     const scalar_t* __restrict__ input,  // NHWC
@@ -123,7 +123,7 @@ __global__ void conv_KXK_ext(
 
     // true for full depth
     int tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch;
-    calc_tile_indices<pixelsPerBlockX, pixelsPerBlockY, OUT_CHANNELS_PER_BLOCK, true>(
+    calc_tile_indices<KERNEL_SIZE, pixelsPerBlockX, pixelsPerBlockY, OUT_CHANNELS_PER_BLOCK, true>(
         tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch, out_C
     );
 
@@ -184,11 +184,11 @@ __global__ void conv_KXK_ext(
                     continue;
 
                 if (out_c < out_C) {
-                    scatter_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
+                    scatter_conv<float, KERNEL_SIZE, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
                         &filter[(in_c_off+in_c) * KERNEL_SIZE*KERNEL_SIZE * out_C + out_c], 
                         t_out, smem.dense_s_in, smem.mask_s_in, out_c, out_C, in_c, in_C, h_in, w_in);
 
-                    // gather_conv<float, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
+                    // gather_conv<float, KERNEL_SIZE, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
                     //     &filter[(in_c_off+in_c) * 9 * out_C + out_c], 
                     //     t_out, smem.dense_s_in, smem.mask_s_in, out_c, out_C, in_c, in_C, h_in, w_in);
 
@@ -211,7 +211,6 @@ __global__ void conv_KXK_ext(
             }
         }
     }
-    
 }
 
 
@@ -233,7 +232,7 @@ void conv3x3_increment_cuda_ext(
     dim3 const blocks(W_up, H_up, C_up);
     int constexpr out_channels_per_block = 32;
     // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
-    conv_KXK_ext<scalar_t, 3, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
+    conv_kxk_ext<scalar_t, 3, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
         filter.data_ptr<scalar_t>(),
         mask.data_ptr<bool>(),
         in_incr.data_ptr<scalar_t>(),
@@ -248,19 +247,22 @@ void conv3x3_increment_cuda_ext(
 
 
 
-void conv3x3_increment_ext_cuda_wrapper(
+
+
+void convkxk_increment_ext_cuda_wrapper(
     torch::Tensor const &in_incr,
     torch::Tensor const &mask,
     torch::Tensor const &filter,
     torch::Tensor &out_incr  // empty tensor;
 ){
 
+    // only calls in 3x3 kernes for now
     conv3x3_increment_cuda_ext<float, 32, 4, 6>(
         in_incr,
         mask,
         filter,
         out_incr  // expect a zero tensor
     );
-
 }
+
 

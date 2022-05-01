@@ -107,7 +107,6 @@ class DatasetInputHandler(InputHandler):
                 self.pad(self.event_preprocessor(
                     torch.Tensor(self.dataset[i])
                 )), dim=0 ).to(device)
-        self.data = DataLoader(self.dataset, shuffle=False, batch_size=1)
 
 
 class IncrDatasetInputHandler(DatasetInputHandler, IncrInputHandler):

@@ -28,12 +28,14 @@ class BaselineModelhandler(ModelHandler):
 
 
 class IncrModelHandler(ModelHandler):
-    def __init__(self, incr_op: IncrementMaskModule, prev_x_input):
+    def __init__(self, incr_op: IncrementMaskModule):
         super().__init__(incr_op)
-        self.op.forward_refresh_reservoirs(prev_x_input)
+        incr_op.eval()
 
     def run_once(self, input_sample):
         return self.op(input_sample)
 
+    def refresh(self, input_sample):
+        return self.op.forward_refresh_reservoirs(input_sample)
 
 

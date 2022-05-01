@@ -1,7 +1,7 @@
 import torch
 import torch.nn.functional as F
 from incr_modules.fenced_module_masked import IncrementMaskModule
-from ._C_ext.pointops.pointops_ext import activation_increment, conv3x3_increment, conv3x3_increment_ext
+from ._C_ext.pointops.pointops_ext import activation_increment, conv3x3_increment_ext
 
 def activation_incr(x, input_incr):
     output_= torch.empty(x.shape, dtype=torch.float, device='cuda')

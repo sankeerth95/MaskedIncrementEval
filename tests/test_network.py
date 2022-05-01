@@ -17,7 +17,7 @@ class TestNetwork(unittest.TestCase):
         model = ModelGetter.get_e2vid_incr_model(None).to(device)
         model_h = IncrModelHandler(model, input_h.prev_x)
 
-        c,h = model_h.run_once(input_h.get_single_sample(0))
+        c,h = model_h.run_oncel(input_h.get_single_sample(0))
 
         c = torch.zeros_like(c)#, torch.zeros_like(h)
         c_incr = torch.zeros_like(c) #, torch.zeros_like(h)
