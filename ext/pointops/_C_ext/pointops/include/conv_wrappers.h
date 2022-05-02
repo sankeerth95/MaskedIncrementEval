@@ -17,7 +17,8 @@ void convkxk_increment_ext_cuda_wrapper(
     torch::Tensor const &mask,
     torch::Tensor const &filter,
     torch::Tensor &out_incr,  // expect a zero tensor
-    int k
+    int k,
+    int stride
 );
 
 

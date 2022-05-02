@@ -5,15 +5,15 @@
 
 
 // compete with this impelemntation
-template<int KERNEL_SIZE=3, int pixelsPerBlockX, int pixelsPerBlockY, int OUT_CHANNELS_PER_BLOCK>
+template<int KERNEL_SIZE=3, int STRIDE, int pixelsPerBlockX, int pixelsPerBlockY, int OUT_CHANNELS_PER_BLOCK>
 __device__ __forceinline__ void calc_tile_indices(
     int& tile_start_out_y, int& tile_start_out_x, int& tile_start_in_y, int& tile_start_in_x, int& tile_start_z, int& batch, const int out_C) {
 
     constexpr int PAD_LENGTH = (KERNEL_SIZE-1)/2;
     tile_start_out_y = blockIdx.y * pixelsPerBlockY;
     tile_start_out_x = blockIdx.x * pixelsPerBlockX;
-    tile_start_in_y = tile_start_out_y  - PAD_LENGTH;
-    tile_start_in_x = tile_start_out_x  - PAD_LENGTH;
+    tile_start_in_y = tile_start_out_y*STRIDE  - PAD_LENGTH;
+    tile_start_in_x = tile_start_out_x*STRIDE  - PAD_LENGTH;
 
     const int blocksPerBatch = divup(out_C, OUT_CHANNELS_PER_BLOCK);
     tile_start_z = (blockIdx.z % blocksPerBatch) * OUT_CHANNELS_PER_BLOCK;
@@ -21,7 +21,7 @@ __device__ __forceinline__ void calc_tile_indices(
 }
 
 
-template<typename scalar_t=float, int KERNEL_SIZE=3, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
+template<typename scalar_t=float, int KERNEL_SIZE=3, int STRIDE=1, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
 __device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar_t const dense_s_in[][WARP_SIZE], 
                             int out_c, int out_C, int in_c, int in_C, int h_in, int w_in){
 
@@ -65,7 +65,7 @@ __device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar
 
 
 
-template<typename scalar_t=float, int KERNEL_SIZE=3, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
+template<typename scalar_t=float, int KERNEL_SIZE=3, int STRIDE=1, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
 __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar_t const dense_s_in[][WARP_SIZE], 
                             int out_c, int out_C, int in_c, int in_C ,int h_in, int w_in){
 
@@ -77,6 +77,7 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
         #pragma unroll
         for(int f_x = 0; f_x < KERNEL_SIZE; ++f_x) { 
             t_f[f_y*KERNEL_SIZE + f_x] = in_c_filter[((KERNEL_SIZE-1-f_y)*KERNEL_SIZE + KERNEL_SIZE-1-f_x) * out_C];
+            // t_f[f_y*KERNEL_SIZE + f_x] = in_c_filter[(f_y*KERNEL_SIZE + f_x) * out_C];
         }
     }
 
@@ -87,18 +88,20 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
         for (int in_x = -PAD_LENGTH; in_x < w_in -PAD_LENGTH; ++in_x) {
 
 
-            const scalar_t val = dense_s_in[(in_y + PAD_LENGTH) * w_in + in_x + PAD_LENGTH][in_c];
+            scalar_t const val = dense_s_in[(in_y + PAD_LENGTH) * w_in + in_x + PAD_LENGTH][in_c];
 
-            const int min_f_y = -in_y;
-            const int min_f_x = -in_x;
-            const int max_f_y = h_in - in_y - KERNEL_SIZE;
-            const int max_f_x = w_in - in_x - KERNEL_SIZE;
+            int const min_f_y = -in_y;
+            int const min_f_x = -in_x;
+            int const max_f_y = h_in - in_y - KERNEL_SIZE;
+            int const max_f_x = w_in - in_x - KERNEL_SIZE;
+            int const stride_off_y = (((PAD_LENGTH-in_y) % STRIDE) + STRIDE) % STRIDE;
+            int const stride_off_x = (((PAD_LENGTH-in_x) % STRIDE) + STRIDE) % STRIDE;
 
             #pragma unroll
-            for (int f_y = Utils::constexpr_max(-PAD_LENGTH , min_f_y); f_y <= Utils::constexpr_min(PAD_LENGTH, max_f_y); f_y += 1) {
+            for (int f_y = Utils::constexpr_max(-PAD_LENGTH + stride_off_y , min_f_y); f_y <= Utils::constexpr_min(PAD_LENGTH, max_f_y); f_y += STRIDE) {
                 #pragma unroll
-                for (int f_x = Utils::constexpr_max(-PAD_LENGTH , min_f_x); f_x <= Utils::constexpr_min(PAD_LENGTH, max_f_x); f_x += 1) {
-                    t_out[(in_y+f_y) * pixelsPerBlockX + (in_x+f_x)] += val * t_f[(f_y+PAD_LENGTH)*KERNEL_SIZE + f_x+ PAD_LENGTH ]; // scatter operation b0ss?
+                for (int f_x = Utils::constexpr_max(-PAD_LENGTH + stride_off_x, min_f_x); f_x <= Utils::constexpr_min(PAD_LENGTH, max_f_x); f_x += STRIDE) {
+                    t_out[((in_y+f_y)/STRIDE) * pixelsPerBlockX + (in_x+f_x)/STRIDE] += val * t_f[(f_y+PAD_LENGTH)*KERNEL_SIZE + f_x+ PAD_LENGTH ]; // scatter operation b0ss?
                 }
             }
         }
@@ -108,7 +111,7 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
 
 
 
-template<typename scalar_t=float, int KERNEL_SIZE=3, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6, int OUT_CHANNELS_PER_BLOCK=256, int BLOCK_SIZE=OUT_CHANNELS_PER_BLOCK>
+template<typename scalar_t=float, int KERNEL_SIZE=3, int STRIDE=1, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6, int OUT_CHANNELS_PER_BLOCK=256, int BLOCK_SIZE=OUT_CHANNELS_PER_BLOCK>
 __global__ void conv_kxk_ext(
     const scalar_t* __restrict__ filter, //channel at the end;
     const bool * __restrict__ mask,
@@ -121,15 +124,15 @@ __global__ void conv_kxk_ext(
 
     // true for full depth
     int tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch;
-    calc_tile_indices<KERNEL_SIZE, pixelsPerBlockX, pixelsPerBlockY, OUT_CHANNELS_PER_BLOCK>(
+    calc_tile_indices<KERNEL_SIZE, STRIDE, pixelsPerBlockX, pixelsPerBlockY, OUT_CHANNELS_PER_BLOCK>(
         tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch, out_C
     );
     // printf("batchsize = %d\n", batch);
     scalar_t* batch_out = output + (batch * out_H * out_W * out_C);
     const scalar_t* batch_in = input + (batch * in_H * in_W * in_C);
 
-    const int w_in = pixelsPerBlockX + 2*PAD_LENGTH;
-    const int h_in = pixelsPerBlockY + 2*PAD_LENGTH;
+    const int w_in = pixelsPerBlockX*STRIDE - STRIDE + 1 + 2*PAD_LENGTH;
+    const int h_in = pixelsPerBlockY*STRIDE - STRIDE + 1 + 2*PAD_LENGTH;
 
     const int n_in_px_aligned = divup(w_in * h_in, 4) * 4;
 
@@ -183,11 +186,11 @@ __global__ void conv_kxk_ext(
 
                 if (out_c < out_C) {
                     // check on kernel size once.
-                    scatter_conv<float, KERNEL_SIZE, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
+                    scatter_conv<float, KERNEL_SIZE, STRIDE, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
                         &filter[(in_c_off+in_c) * KERNEL_SIZE*KERNEL_SIZE * out_C + out_c], t_out, smem.dense_s_in, 
                         out_c, out_C, in_c, in_C, h_in, w_in);
 
-                    // gather_conv<float, KERNEL_SIZE, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
+                    // gather_conv<float, KERNEL_SIZE, STRIDE, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
                     //     &filter[(in_c_off+in_c) * 9 * out_C + out_c], 
                     //     t_out, smem.dense_s_in, smem.mask_s_in, out_c, out_C, in_c, in_C, h_in, w_in);
                 }
@@ -213,7 +216,7 @@ __global__ void conv_kxk_ext(
 
 
 
-template <typename scalar_t, int WARP_SIZE=32, int H_OUT_PER_BLOCK=6, int W_OUT_PER_BLOCK=6>
+template <typename scalar_t, int STRIDE=1, int WARP_SIZE=32, int H_OUT_PER_BLOCK=6, int W_OUT_PER_BLOCK=6>
 static void conv3x3_increment_cuda_ext(
     torch::Tensor const &in_incr,
     torch::Tensor const &mask,
@@ -230,7 +233,7 @@ static void conv3x3_increment_cuda_ext(
     dim3 const blocks(W_up, H_up, C_up);
     int constexpr out_channels_per_block = 32;
     // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
-    conv_kxk_ext<scalar_t, 3, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
+    conv_kxk_ext<scalar_t, 3, STRIDE, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
         filter.data_ptr<scalar_t>(),
         mask.data_ptr<bool>(),
         in_incr.data_ptr<scalar_t>(),
@@ -245,7 +248,7 @@ static void conv3x3_increment_cuda_ext(
 
 
 
-template <typename scalar_t, int WARP_SIZE=32, int H_OUT_PER_BLOCK=6, int W_OUT_PER_BLOCK=6>
+template <typename scalar_t, int STRIDE=1, int WARP_SIZE=32, int H_OUT_PER_BLOCK=6, int W_OUT_PER_BLOCK=6>
 static void conv5x5_increment_cuda_ext(
     torch::Tensor const &in_incr,
     torch::Tensor const &mask,
@@ -262,7 +265,7 @@ static void conv5x5_increment_cuda_ext(
     dim3 const blocks(W_up, H_up, C_up);
     int constexpr out_channels_per_block = 32;
     // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
-    conv_kxk_ext<scalar_t, 5, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
+    conv_kxk_ext<scalar_t, 5, STRIDE, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
         filter.data_ptr<scalar_t>(),
         mask.data_ptr<bool>(),
         in_incr.data_ptr<scalar_t>(),
@@ -280,25 +283,46 @@ void convkxk_increment_ext_cuda_wrapper(
     torch::Tensor const &mask,
     torch::Tensor const &filter,
     torch::Tensor &out_incr,  // empty tensor;
-    int k
+    int k,
+    int stride
 ){
     if(k == 3){
-        conv3x3_increment_cuda_ext<float, 32, 6, 6>(
-            in_incr,
-            mask,
-            filter,
-            out_incr  // expect a zero tensor
-        );
+        if(stride == 1 ){
+            conv3x3_increment_cuda_ext<float, 1, 32, 6, 6>(
+                in_incr,
+                mask,
+                filter,
+                out_incr  // expect a zero tensor
+            );
+        } else if (stride == 2){
+            conv3x3_increment_cuda_ext<float, 2, 32, 6, 6>(
+                in_incr,
+                mask,
+                filter,
+                out_incr  // expect a zero tensor
+            );
+        } else{
+            throw std::logic_error("not implemented stride size");
+        }
     } else if(k == 5){
-        conv5x5_increment_cuda_ext<float, 32, 6, 6>(
-            in_incr,
-            mask,
-            filter,
-            out_incr  // expect a zero tensor
-        );
-
+        if(stride == 1 ){
+            conv5x5_increment_cuda_ext<float, 1, 32, 6, 6>(
+                in_incr,
+                mask,
+                filter,
+                out_incr  // expect a zero tensor
+            );
+        } else if (stride == 2){
+            conv5x5_increment_cuda_ext<float, 2, 32, 6, 6>(
+                in_incr,
+                mask,
+                filter,
+                out_incr  // expect a zero tensor
+            );
+        } else{
+            throw std::logic_error("not implemented stride size");
+        }
     } else {
-        printf("not implemented error\n");
         throw std::logic_error("Convolution kxk not implemented for this k.");
     }
 

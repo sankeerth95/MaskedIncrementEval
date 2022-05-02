@@ -66,4 +66,29 @@ conv shape:  torch.Size([1, 32, 264, 352]) filter: torch.Size([1, 32, 1, 1])
 
 
 
+conv shape:  torch.Size([1, 5, 264, 352]) filter: torch.Size([32, 5, 5, 5]) stride, padding:  (1, 1) (2, 2)
+after convhead 0.4451843798160553
+conv shape:  torch.Size([1, 32, 264, 352]) filter: torch.Size([64, 32, 5, 5]) stride, padding:  (2, 2) (2, 2)
+conv shape:  torch.Size([1, 128, 132, 176]) filter: torch.Size([256, 128, 3, 3]) stride, padding:  (1, 1) (1, 1)
+after encoder0 0.42714184522628784
+conv shape:  torch.Size([1, 64, 132, 176]) filter: torch.Size([128, 64, 5, 5]) stride, padding:  (2, 2) (2, 2)
+conv shape:  torch.Size([1, 256, 66, 88]) filter: torch.Size([512, 256, 3, 3]) stride, padding:  (1, 1) (1, 1)
+after encoder1 0.26947206258773804
+conv shape:  torch.Size([1, 128, 66, 88]) filter: torch.Size([256, 128, 5, 5]) stride, padding:  (2, 2) (2, 2)
+conv shape:  torch.Size([1, 512, 33, 44]) filter: torch.Size([1024, 512, 3, 3]) stride, padding:  (1, 1) (1, 1)
+after encoder2 0.2303180992603302
+conv shape:  torch.Size([1, 256, 33, 44]) filter: torch.Size([256, 256, 3, 3]) stride, padding:  (1, 1) (1, 1)
+conv shape:  torch.Size([1, 256, 33, 44]) filter: torch.Size([256, 256, 3, 3]) stride, padding:  (1, 1) (1, 1)
+after resblock0 0.308467298746109
+conv shape:  torch.Size([1, 256, 33, 44]) filter: torch.Size([256, 256, 3, 3]) stride, padding:  (1, 1) (1, 1)
+conv shape:  torch.Size([1, 256, 33, 44]) filter: torch.Size([256, 256, 3, 3]) stride, padding:  (1, 1) (1, 1)
+after resblock1 0.11918636411428452
+conv shape:  torch.Size([1, 256, 66, 88]) filter: torch.Size([128, 256, 5, 5]) stride, padding:  (1, 1) (2, 2)
+after decoder0 0.5832297801971436
+conv shape:  torch.Size([1, 128, 132, 176]) filter: torch.Size([64, 128, 5, 5]) stride, padding:  (1, 1) (2, 2)
+after decoder1 0.6231410503387451
+conv shape:  torch.Size([1, 64, 264, 352]) filter: torch.Size([32, 64, 5, 5]) stride, padding:  (1, 1) (2, 2)
+after decoder2 0.6259654760360718
+conv shape:  torch.Size([1, 32, 264, 352]) filter: torch.Size([1, 32, 1, 1]) stride, padding:  (1, 1) (0, 0)
+
 

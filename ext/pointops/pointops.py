@@ -26,34 +26,38 @@ class ActivationIncr(IncrementMaskModule):
 
 
 
-def convert_filter_out_channels_last(filter, transposed=False):
+def convert_filter_out_channels_last(filter, transposed=True):
+    return torch.permute(filter, (1,2,3,0)).contiguous().clone()
     if transposed:
         return torch.transpose(torch.transpose(filter, 2, 1), 3, 2).contiguous().clone()
     return torch.transpose(torch.transpose(torch.transpose(filter, 1, 0), 2, 1), 3, 2).contiguous().clone()
 
 
 # x should be an nhwc non-contiguous tensor; 
-def conv3x3_incr_ext(x, filter, c_out, mask=None):
+def conv3x3_incr_ext(x, filter, c_out, stride, mask=None):
     # NHWC format (noncontiguous input))
     output_= torch.empty((x.shape[0], c_out, x.shape[2], x.shape[3]), dtype=torch.float, device='cuda', memory_format=torch.channels_last)
-    conv3x3_increment_ext(x, mask, filter, output_)
+    # output_= torch.zeros((x.shape[0], c_out, x.shape[2], x.shape[3]), dtype=torch.float, device='cuda').to(memory_format=torch.channels_last)
+
+    conv3x3_increment_ext(x, mask, filter, output_, stride)
     return output_
 
 
 class Conv3x3Incr(IncrementMaskModule):
 
-    def __init__(self, in_shape, c_in, c_out, weight, padding=0, device='cuda'):
+    def __init__(self, in_shape, c_in, c_out, weight, stride = 1, padding=0, device='cuda'):
         super().__init__()
         self.weight = weight
         self.weight_t = convert_filter_out_channels_last(weight)
         self.c_in = c_in
         self.c_out = c_out
+        self.stride = stride
         self.mask = torch.rand(in_shape, device=device).le(.1)
 
     # expects nhwc tensor
     def forward(self, x_incr):
         # print(x_incr.shape, self.weight.shape, self.c_out)
-        return conv3x3_incr_ext(x_incr, self.weight_t, self.c_out, self.mask)
+        return conv3x3_incr_ext(x_incr, self.weight_t, self.c_out, self.stride, self.mask)
 
     def forward_refresh_reservoir(self, x):
         return F.conv2d(x, self.weight, padding='same')

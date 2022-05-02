@@ -29,7 +29,8 @@ void static convkxk_template(
     torch::Tensor const &x_incr,
     torch::Tensor const &mask,
     torch::Tensor const &filter,
-    torch::Tensor &out_incr  // expect a zero tensor
+    torch::Tensor &out_incr,
+    int stride
 ){
     CHECK_CUDA(x_incr);   //NOT CONTIGUOUS
     CHECK_INPUT(mask);   // contiguous;
@@ -41,7 +42,8 @@ void static convkxk_template(
       mask,
       filter,
       out_incr,
-      KERNEL_SIZE
+      KERNEL_SIZE,
+      stride
     );
 }
 
@@ -50,13 +52,15 @@ void conv1x1_increment_ext(
     torch::Tensor const &x_incr,
     torch::Tensor const &mask,
     torch::Tensor const &filter,
-    torch::Tensor &out_incr  // expect a zero tensor
+    torch::Tensor &out_incr,
+    int stride
 ){
     convkxk_template<1>(
       x_incr,
       mask,
       filter,
-      out_incr
+      out_incr,
+      stride
     );
 }
 
@@ -65,13 +69,15 @@ void conv3x3_increment_ext(
     torch::Tensor const &x_incr,
     torch::Tensor const &mask,
     torch::Tensor const &filter,
-    torch::Tensor &out_incr  // expect a zero tensor
+    torch::Tensor &out_incr,
+    int stride
 ){
     convkxk_template<3>(
       x_incr,
       mask,
       filter,
-      out_incr
+      out_incr,
+      stride
     );
 }
 
@@ -79,13 +85,15 @@ void conv5x5_increment_ext(
     torch::Tensor const &x_incr,
     torch::Tensor const &mask,
     torch::Tensor const &filter,
-    torch::Tensor &out_incr  // expect a zero tensor
+    torch::Tensor &out_incr,
+    int stride
 ){
     convkxk_template<5>(
       x_incr,
       mask,
       filter,
-      out_incr
+      out_incr,
+      stride
     );
 }
 
