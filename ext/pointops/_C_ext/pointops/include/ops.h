@@ -14,11 +14,30 @@ void activation_increment(
 
 
 
+void conv1x1_increment_ext(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+);
+
+
+
 void conv3x3_increment_ext(
     torch::Tensor const &x_incr,
     torch::Tensor const &mask,
     torch::Tensor const &filter,
     torch::Tensor &out_incr  // expect a zero tensor
 );
+
+
+
+void conv5x5_increment_ext(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+);
+
 
 

@@ -24,7 +24,8 @@ void activation_increment(
 
 
 
-void conv3x3_increment_ext(
+template <int KERNEL_SIZE=3>
+void static convkxk_template(
     torch::Tensor const &x_incr,
     torch::Tensor const &mask,
     torch::Tensor const &filter,
@@ -39,14 +40,61 @@ void conv3x3_increment_ext(
       x_incr,
       mask,
       filter,
+      out_incr,
+      KERNEL_SIZE
+    );
+}
+
+
+void conv1x1_increment_ext(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+){
+    convkxk_template<1>(
+      x_incr,
+      mask,
+      filter,
+      out_incr
+    );
+}
+
+
+void conv3x3_increment_ext(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+){
+    convkxk_template<3>(
+      x_incr,
+      mask,
+      filter,
+      out_incr
+    );
+}
+
+void conv5x5_increment_ext(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+){
+    convkxk_template<5>(
+      x_incr,
+      mask,
+      filter,
       out_incr
     );
 }
 
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-  m.def("activation_increment", &activation_increment, "Activate and increment x tensor;");
+  m.def("activation_increment" , &activation_increment , "activate and increment x tensor;");
+  m.def("conv1x1_increment_ext", &conv1x1_increment_ext, "convolution 1x1 kernel;");
   m.def("conv3x3_increment_ext", &conv3x3_increment_ext, "convolution 3x3 kernel;");
+  m.def("conv5x5_increment_ext", &conv5x5_increment_ext, "convolution 5x5 kernel;");
 }
 
 

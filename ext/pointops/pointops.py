@@ -23,12 +23,13 @@ class ActivationIncr(IncrementMaskModule):
         return torch.relu(x)
 
 
-# convolution wrapper
-# filter: (out, in, f_h, f_w)
-def conv3x3_incr(x, filter):
-    output_= torch.empty((1, filter.shape[0], x.shape[2], x.shape[3]), dtype=torch.float, device='cuda')
-    conv3x3_increment(x[0], filter, output_[0])
-    return output_
+
+
+
+def convert_filter_out_channels_last(filter, transposed=False):
+    if transposed:
+        return torch.transpose(torch.transpose(filter, 2, 1), 3, 2).contiguous().clone()
+    return torch.transpose(torch.transpose(torch.transpose(filter, 1, 0), 2, 1), 3, 2).contiguous().clone()
 
 
 # x should be an nhwc non-contiguous tensor; 
@@ -37,11 +38,6 @@ def conv3x3_incr_ext(x, filter, c_out, mask=None):
     output_= torch.empty((x.shape[0], c_out, x.shape[2], x.shape[3]), dtype=torch.float, device='cuda', memory_format=torch.channels_last)
     conv3x3_increment_ext(x, mask, filter, output_)
     return output_
-
-def convert_filter_out_channels_last(filter, transposed=False):
-    if transposed:
-        return torch.transpose(torch.transpose(filter, 2, 1), 3, 2).contiguous().clone()
-    return torch.transpose(torch.transpose(torch.transpose(filter, 1, 0), 2, 1), 3, 2).contiguous().clone()
 
 
 class Conv3x3Incr(IncrementMaskModule):
@@ -57,9 +53,9 @@ class Conv3x3Incr(IncrementMaskModule):
     # expects nhwc tensor
     def forward(self, x_incr):
         # print(x_incr.shape, self.weight.shape, self.c_out)
-        conv3x3_incr_ext(x_incr, self.weight_t, self.c_out, self.mask)
+        return conv3x3_incr_ext(x_incr, self.weight_t, self.c_out, self.mask)
 
     def forward_refresh_reservoir(self, x):
-        return F.conv2d(x, self.weight)
+        return F.conv2d(x, self.weight, padding='same')
 
 

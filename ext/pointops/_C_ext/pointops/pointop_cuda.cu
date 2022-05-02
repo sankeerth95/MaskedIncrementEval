@@ -86,6 +86,12 @@ void activation_increment_cuda_wrapper(
     torch::Tensor const &in_incr,
     torch::Tensor &out_incr  // expect a zero tensor
 ){
+
+    CHECK_INPUT(X);
+    CHECK_INPUT(in_incr);
+    CHECK_INPUT(out_incr);
+
+        
     activation_increment_cuda<float, 16, 3, 3>(
         X,
         in_incr,
