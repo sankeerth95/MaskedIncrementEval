@@ -33,7 +33,7 @@ void static convkxk_template(
     int stride
 ){
     CHECK_CUDA(x_incr);   //NOT CONTIGUOUS
-    CHECK_INPUT(mask);   // contiguous;
+    CHECK_CUDA(mask);   // contiguous;
     CHECK_INPUT(filter);   // contiguous;
     CHECK_CUDA(out_incr); // not contiguous
 

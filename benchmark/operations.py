@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from ext.pointops.pointops_modules import ActivationIncr
 
 from .model_handlers import BaselineModelhandler, IncrModelHandler
 
@@ -12,7 +13,6 @@ class Conv2dBaseline(BaselineModelhandler):
 
 
 
-from ext.pointops.pointops import ActivationIncr
 
 
 class ActivationIncrHandler(IncrModelHandler):
@@ -29,7 +29,7 @@ class ActivationHandler(BaselineModelhandler):
 
 
 
-from ext.pointops.pointops import Conv3x3Incr
+from ext.pointops.pointops_modules import Conv3x3Incr
 
 class Conv3x3IncrBaseline(BaselineModelhandler):
     def __init__(self,in_shape, shape=(32, 64), kernel_size=3, padding=0, device='cuda'):

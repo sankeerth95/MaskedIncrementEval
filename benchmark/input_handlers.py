@@ -87,7 +87,7 @@ class StructurallySparseRandomInputHandlerNCHW(RandomInputHandler):
 
 
 class DatasetInputHandler(InputHandler):
-    def __init__(self, start_index=0, device='cuda') -> None:
+    def __init__(self, start_index=0, device='cuda', memory_format=torch.channels_last) -> None:
         super().__init__()
         self.start_index = start_index
         self.device = device
@@ -106,7 +106,7 @@ class DatasetInputHandler(InputHandler):
         self.get_data_i = lambda i: torch.unsqueeze(
                 self.pad(self.event_preprocessor(
                     torch.Tensor(self.dataset[i])
-                )), dim=0 ).to(device)
+                )), dim=0 ).to(device, memory_format=memory_format)
 
 
 class IncrDatasetInputHandler(DatasetInputHandler, IncrInputHandler):

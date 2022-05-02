@@ -1,8 +1,10 @@
+from turtle import forward
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ev_projs.rpg_e2depth.model.model import BaseE2VID
 from .masked_types import Masked, Sp, DenseT, SpOrDense
+import ext.pointops.pointops_functional as pf
 
 from typing import overload, Union
 
@@ -120,9 +122,6 @@ class NonlinearPointOpIncr(IncrementMaskModule):
         self.op = op
 
     @overload
-    def forward(self, x_incr: Sp) -> Sp: ...
-
-    @overload
     def forward(self, x_incr: DenseT) -> DenseT: ...
 
     def forward(self, x_incr: Masked, x_incr_mask: Masked=None) -> Masked:
@@ -155,10 +154,16 @@ class nnLinearIncr(IncrementMaskModule):
         return F.linear(x, self.linear.weight, self.linear.bias)
 
 
-def conv2d_from_module(x: Masked, gates: nn.Conv2d, bias=False) -> Masked:
-    gate_bias = gates.bias.data if bias else None 
-    return F.conv2d(x, gates.weight.data, bias=gate_bias, stride=gates.stride, \
-                padding=gates.padding, dilation=gates.dilation, groups=gates.groups)
+def conv2d_from_module(x: Masked, conv_weights, conv_bias=None, stride=(1,1), padding=1, forward_refresh=False) -> Masked:
+
+    if not forward_refresh:
+        output_ = pf.functional_conv_module(x, conv_weights, mask=None, stride=stride, padding=padding)
+    else:
+        output_ = F.conv2d(x, torch.permute(conv_weights, (3, 0, 1, 2)), bias=conv_bias, 
+        stride=stride, padding=padding)
+
+    print(x.shape, output_.shape)
+    return output_
 
 
 def transposed_conv2d_from_module(x: Masked, gates: nn.ConvTranspose2d, bias=True) -> Masked:
@@ -184,6 +189,8 @@ class ConvLayerIncr(IncrementMaskModule):
 
         bias = False if norm == 'BN' else True
         self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
+        self.conv2d_weights = pf.convert_filter_out_channels_last(self.conv2d.weight).cuda()
+
         # self.sparseconv2d = SparseNet(self.conv2d)
         self.kf = KFencedMaskModule(k=k_init)
         if activation is not None:
@@ -203,7 +210,7 @@ class ConvLayerIncr(IncrementMaskModule):
 
     # fully connected implementation
     def forward(self, x_incr: Masked) -> Masked:
-        out_incr = conv2d_from_module(x_incr, self.conv2d, bias=False)
+        out_incr = conv2d_from_module(x_incr, self.conv2d_weights, conv_bias=None, stride=self.conv2d.stride, padding=self.conv2d.padding)
         out_incr = self.kf(out_incr)
 
         if self.norm == 'BN':
@@ -219,7 +226,7 @@ class ConvLayerIncr(IncrementMaskModule):
         return out_incr
 
     def forward_refresh_reservoirs(self, x: DenseT):
-        out = conv2d_from_module(x, self.conv2d)
+        out = conv2d_from_module(x, self.conv2d_weights, conv_bias=self.conv2d.bias, stride=self.conv2d.stride, padding=self.conv2d.padding, forward_refresh=True)
         out = self.kf.forward_refresh_reservoirs(out)
         if self.norm == 'BN':
             out = self.norm_layer(out)
@@ -248,6 +255,7 @@ class ConvLSTMIncr(IncrementMaskModule):
 
         # convfilter:
         self.Gates = nn.Conv2d(input_size + hidden_size, 4 * hidden_size, kernel_size, padding=pad)
+        self.Gates_weights = pf.convert_filter_out_channels_last(self.Gates.weight).cuda()
 
         self.kf = KFencedMaskModule(k=k_init)
         #nn.Conv2d(input_size + hidden_size, 4 * hidden_size, kernel_size, padding=pad)
@@ -296,17 +304,17 @@ class ConvLSTMIncr(IncrementMaskModule):
             if state_size not in self.zero_tensors_incr:
                 # allocate a tensor with size `spatial_size`, filled with zero (if it has not been allocated already)
                 self.zero_tensors_incr[state_size] = (
-                    torch.zeros(state_size).to(input_incr.device),
-                    torch.zeros(state_size).to(input_incr.device)
+                    torch.zeros(state_size, device=input_incr.device),
+                    torch.zeros(state_size, device=input_incr.device)
                 )
-
 
             prev_state_incr = self.zero_tensors_incr[state_size]
 
         prev_h_incr, prev_c_incr = prev_state_incr
         stacked_inputs_incr = torch.cat((input_incr, prev_h_incr), 1)
 
-        gates_incr = conv2d_from_module(stacked_inputs_incr, self.Gates, bias=False)
+        gates_incr = conv2d_from_module(stacked_inputs_incr, self.Gates_weights, conv_bias=None, stride=self.Gates.stride, padding=self.Gates.padding)
+
         gates_incr = self.kf(gates_incr)
 
         in_incr, rm_incr, o_incr, cg_incr = gates_incr.chunk(4, 1)
@@ -368,7 +376,8 @@ class ConvLSTMIncr(IncrementMaskModule):
         
         # data size is [batch, channel, height, width]
         stacked_inputs = torch.cat((input_, prev_h), 1)
-        gates = conv2d_from_module(stacked_inputs, self.Gates)
+        gates = conv2d_from_module(stacked_inputs, self.Gates_weights, conv_bias=self.Gates.bias, stride=self.Gates.stride, padding=self.Gates.padding, forward_refresh=True)
+
         gates = self.kf.forward_refresh_reservoirs(gates)
         # chunk across channel dimension
         ing, rm, o, cg = gates.chunk(4, 1)
@@ -430,6 +439,8 @@ class ResidualBlockIncr(IncrementMaskModule):
         super().__init__()
         bias = False if norm == 'BN' else True
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=bias)
+        self.conv1_weights = pf.convert_filter_out_channels_last(self.conv1.weight).cuda()
+
         self.kf1 = KFencedMaskModule(k=k_init)
 
         self.norm = norm
@@ -449,13 +460,15 @@ class ResidualBlockIncr(IncrementMaskModule):
         self.relu2 = NonlinearPointOpIncr(res_in=self.c2_in_res, op=torch.relu)
 
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
+        self.conv2_weights = pf.convert_filter_out_channels_last(self.conv2.weight).cuda()
+
         self.kf2 = KFencedMaskModule(k=k_init)
 
         self.downsample = downsample
 
     def forward(self, x_incr: Masked) -> Masked:
         residual_incr = x_incr
-        out_incr = conv2d_from_module(x_incr, self.conv1, bias=False)
+        out_incr = conv2d_from_module(x_incr, self.conv1_weights, conv_bias=None, stride=self.conv1.stride, padding=self.conv1.padding)
         out_incr = self.kf1(out_incr)
 
         if self.norm  == 'BN':
@@ -466,7 +479,7 @@ class ResidualBlockIncr(IncrementMaskModule):
         out_incr_relu = self.relu1(out_incr)
         self.c1_in_res.accumulate(out_incr)
 
-        out_incr = conv2d_from_module(out_incr_relu, self.conv2, bias=False)
+        out_incr = conv2d_from_module(x_incr, self.conv2_weights, conv_bias=None, stride=self.conv2.stride, padding=self.conv2.padding)
         out_incr = self.kf2(out_incr)
         if self.norm =='BN':
             out_incr = bn2d_from_module(out_incr, self.bn2, bias=False)
@@ -486,7 +499,7 @@ class ResidualBlockIncr(IncrementMaskModule):
 
     def forward_refresh_reservoirs(self, x):
         residual = x
-        out = conv2d_from_module(x, self.conv1)
+        out = conv2d_from_module(x, self.conv1_weights, conv_bias=self.conv1.bias, stride=self.conv1.stride, padding=self.conv1.padding, forward_refresh=True)
         out = self.kf1.forward_refresh_reservoirs(out)
         if self.norm == 'BN':
             out = F.batch_norm(out, running_mean=self.bn1.running_mean, running_var=self.bn1.running_var, weight=self.bn1.weight, bias=self.bn2.bias, training=self.bn1.training, momentum=self.bn1.momentum, eps=self.bn1.eps)
@@ -496,7 +509,7 @@ class ResidualBlockIncr(IncrementMaskModule):
         out_relu = self.relu1.forward_refresh_reservoirs(out)
         self.c1_in_res.update_reservoir(out)
 
-        out = conv2d_from_module(out_relu, self.conv2)
+        out = conv2d_from_module(x, self.conv2_weights, conv_bias=self.conv2.bias, stride=self.conv2.stride, padding=self.conv2.padding, forward_refresh=True)
         out = self.kf2.forward_refresh_reservoirs(out)
         if self.norm == 'BN':
             out = F.batch_norm(out, running_mean=self.bn2.running_mean, running_var=self.bn2.running_var, weight=self.bn2.weight, bias=self.bn2.bias, training=self.bn2.training, momentum=self.bn2.momentum, eps=self.bn2.eps)
@@ -570,6 +583,7 @@ class UpsampleConvLayerIncr(IncrementMaskModule):
 
         bias = False if norm == 'BN' else True
         self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
+        self.conv2d_weights = pf.convert_filter_out_channels_last(self.conv2d.weight).cuda()
         self.kf = KFencedMaskModule(k=k_init)
         if activation is not None:
             op = getattr(torch, activation, 'relu')
@@ -587,7 +601,7 @@ class UpsampleConvLayerIncr(IncrementMaskModule):
     def forward(self, x_incr: SpOrDense) -> SpOrDense:
 
         x_upsampled_incr = interpolate_from_module(x_incr)
-        out_incr = conv2d_from_module(x_upsampled_incr, self.conv2d, bias=False)
+        out_incr = conv2d_from_module(x_upsampled_incr, self.conv2d_weights, conv_bias=None, stride=self.conv2d.stride, padding=self.conv2d.padding)
         out_incr = self.kf(out_incr)
 
         if self.norm =='BN':
@@ -605,7 +619,7 @@ class UpsampleConvLayerIncr(IncrementMaskModule):
     def forward_refresh_reservoirs(self, x):
 
         x_upsampled = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
-        out = conv2d_from_module(x_upsampled. self.conv2d)
+        out = conv2d_from_module(x_upsampled, self.conv2d_weights, conv_bias=self.conv2d.bias, stride=self.conv2d.stride, padding=self.conv2d.padding, forward_refresh=True)
         out = self.kf.forward_refresh_reservoirs(out)
         if self.norm =='BN':
             out = bn2d_from_module(out, self.norm_layer, bias=True)
