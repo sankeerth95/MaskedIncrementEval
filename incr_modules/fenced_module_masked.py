@@ -1,4 +1,4 @@
-from turtle import forward
+from ast import Assert
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -154,15 +154,14 @@ class nnLinearIncr(IncrementMaskModule):
         return F.linear(x, self.linear.weight, self.linear.bias)
 
 
-def conv2d_from_module(x: Masked, conv_weights, conv_bias=None, stride=(1,1), padding=1, forward_refresh=False) -> Masked:
-
+def conv2d_from_module(x: Masked, conv_weights, conv_bias=None, stride=(1,1), padding=(1, 1), forward_refresh=False) -> Masked:
+    # print('in shape :/ ', x.shape)
     if not forward_refresh:
         output_ = pf.functional_conv_module(x, conv_weights, mask=None, stride=stride, padding=padding)
     else:
         output_ = F.conv2d(x, torch.permute(conv_weights, (3, 0, 1, 2)), bias=conv_bias, 
         stride=stride, padding=padding)
 
-    print(x.shape, output_.shape)
     return output_
 
 
@@ -210,9 +209,10 @@ class ConvLayerIncr(IncrementMaskModule):
 
     # fully connected implementation
     def forward(self, x_incr: Masked) -> Masked:
-        out_incr = conv2d_from_module(x_incr, self.conv2d_weights, conv_bias=None, stride=self.conv2d.stride, padding=self.conv2d.padding)
+        print("before conv layer increment")
+        out_incr = conv2d_from_module(x_incr, self.conv2d_weights, conv_bias=None, stride=self.conv2d.stride, padding=self.conv2d.padding, forward_refresh=False)
+        print('after')
         out_incr = self.kf(out_incr)
-
         if self.norm == 'BN':
             out_incr = bn2d_from_module(out_incr, self.norm_layer, bias=False)
         elif self.norm == 'IN':
@@ -288,10 +288,7 @@ class ConvLSTMIncr(IncrementMaskModule):
     @overload
     def forward(self, input_incr: torch.Tensor, prev_state_incr: torch.Tensor) -> torch.Tensor: ...
 
-    @overload
-    def forward(self, input_incr: Sp, prev_state_incr: Sp) -> Sp: ...
-
-    def forward(self, input_incr: SpOrDense, prev_state_incr: SpOrDense) -> SpOrDense:
+    def forward(self, input_incr: Masked, prev_state_incr: Masked):
 
         # get batch and spatial sizes
         batch_size = input_incr.data.size()[0]
@@ -304,15 +301,23 @@ class ConvLSTMIncr(IncrementMaskModule):
             if state_size not in self.zero_tensors_incr:
                 # allocate a tensor with size `spatial_size`, filled with zero (if it has not been allocated already)
                 self.zero_tensors_incr[state_size] = (
-                    torch.zeros(state_size, device=input_incr.device),
-                    torch.zeros(state_size, device=input_incr.device)
+                    torch.zeros(state_size, device=input_incr.device).to(memory_format=torch.channels_last),
+                    torch.zeros(state_size, device=input_incr.device).to(memory_format=torch.channels_last)
                 )
 
             prev_state_incr = self.zero_tensors_incr[state_size]
 
         prev_h_incr, prev_c_incr = prev_state_incr
-        stacked_inputs_incr = torch.cat((input_incr, prev_h_incr), 1)
 
+        if input_incr.is_contiguous():
+            raise AssertionError
+        if prev_h_incr.is_contiguous():
+            raise AssertionError
+
+        stacked_inputs_incr = torch.cat((input_incr, prev_h_incr), 1)
+        if stacked_inputs_incr.is_contiguous():
+            raise AssertionError
+        print('before gates_incer')
         gates_incr = conv2d_from_module(stacked_inputs_incr, self.Gates_weights, conv_bias=None, stride=self.Gates.stride, padding=self.Gates.padding)
 
         gates_incr = self.kf(gates_incr)
@@ -365,8 +370,8 @@ class ConvLSTMIncr(IncrementMaskModule):
             if state_size not in self.zero_tensors: # TODO: Need to deal with sparsifying this later.
                 # allocate a tensor with size `spatial_size`, filled with zero (if it has not been allocated already)
                 self.zero_tensors[state_size] = (
-                    torch.zeros(state_size).to(input_.device),
-                    torch.zeros(state_size).to(input_.device)
+                    torch.zeros(state_size, device=input_.device).to(memory_format=torch.channels_last),
+                    torch.zeros(state_size, device=input_.device).to(memory_format=torch.channels_last)
                 )
 
             prev_state = self.zero_tensors[tuple(state_size)]
@@ -479,7 +484,7 @@ class ResidualBlockIncr(IncrementMaskModule):
         out_incr_relu = self.relu1(out_incr)
         self.c1_in_res.accumulate(out_incr)
 
-        out_incr = conv2d_from_module(x_incr, self.conv2_weights, conv_bias=None, stride=self.conv2.stride, padding=self.conv2.padding)
+        out_incr = conv2d_from_module(out_incr_relu, self.conv2_weights, conv_bias=None, stride=self.conv2.stride, padding=self.conv2.padding)
         out_incr = self.kf2(out_incr)
         if self.norm =='BN':
             out_incr = bn2d_from_module(out_incr, self.bn2, bias=False)
@@ -601,7 +606,10 @@ class UpsampleConvLayerIncr(IncrementMaskModule):
     def forward(self, x_incr: SpOrDense) -> SpOrDense:
 
         x_upsampled_incr = interpolate_from_module(x_incr)
+        print('before upsample conv')
         out_incr = conv2d_from_module(x_upsampled_incr, self.conv2d_weights, conv_bias=None, stride=self.conv2d.stride, padding=self.conv2d.padding)
+        print('after upsample conv')
+
         out_incr = self.kf(out_incr)
 
         if self.norm =='BN':
@@ -712,6 +720,7 @@ class UNetRecurrentIncr(BaseUNetIncr):
 
 
     def forward(self, x_incr: Masked, prev_states_incr: Masked):
+        print('forward')
 
         print_sparsity(x_incr, "before convhead")
 
@@ -724,6 +733,8 @@ class UNetRecurrentIncr(BaseUNetIncr):
         if prev_states_incr is None:
             prev_states_incr = [None] * self.num_encoders
 
+        print("before encoders")
+
         # encoder
         blocks = []
         states_incr = []
@@ -732,16 +743,15 @@ class UNetRecurrentIncr(BaseUNetIncr):
             blocks.append(x_incr)
             states_incr.append(state_incr)
             print_sparsity(x_incr, "after encoder{}".format(i) )
-            break
 
-        return x_incr, state_incr
+        print("before resblocks")
 
         # residual blocks
         for i,resblock in enumerate(self.resblocks):
             x_incr = resblock(x_incr)
             print_sparsity(x_incr, "after resblock{}".format(i) )
 
-
+        print("before decoder")
         # decoder
         for i, decoder in enumerate(self.decoders):
             x_incr = decoder(self.apply_skip_connection(x_incr, blocks[self.num_encoders - i - 1]))
@@ -751,13 +761,14 @@ class UNetRecurrentIncr(BaseUNetIncr):
         pred_incr = self.pred(self.apply_skip_connection(x_incr, head))
         img_incr = self.activation(pred_incr)
         self.act_baseunet_in_res.accumulate(pred_incr)
-        
+
         print_sparsity(x_incr, "final")
 
         return img_incr, states_incr
 
 
     def forward_refresh_reservoirs(self, x, prev_states):
+        print('forward refresh')
         x = self.head.forward_refresh_reservoirs(x)
         head = x
         if prev_states is None:
@@ -770,8 +781,7 @@ class UNetRecurrentIncr(BaseUNetIncr):
             x, state = encoder.forward_refresh_reservoirs(x, prev_states[i])
             blocks.append(x)
             states.append(state)
-            break
-        return x, state
+
         # residual blocks
         for resblock in self.resblocks:
             x = resblock.forward_refresh_reservoirs(x)
@@ -812,6 +822,7 @@ class E2VIDRecurrentIncr(BaseE2VID, IncrementMaskModule):
     def forward(self, input_sample: Masked):
         event_tensor, prev_states = input_sample
         img_pred, states = self.unetrecurrent.forward(event_tensor, prev_states)
+        print('end')
         return img_pred, states
 
     def forward_refresh_reservoirs(self, input_sample):

@@ -56,3 +56,4 @@ conv shape:  torch.Size([1, 64, 264, 352]) filter: torch.Size([32, 64, 5, 5]) st
 after decoder2 0.6259654760360718
 conv shape:  torch.Size([1, 32, 264, 352]) filter: torch.Size([1, 32, 1, 1]) stride, padding:  (1, 1) (0, 0)
 
+s

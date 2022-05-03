@@ -1,3 +1,4 @@
+from time import sleep
 import torch
 from ._C_ext.pointops.pointops_ext import activation_increment, conv3x3_increment_ext, conv5x5_increment_ext, conv1x1_increment_ext
 
@@ -25,11 +26,11 @@ def functional_conv_module(x_incr, conv_weights, mask=None, stride=(1,1), paddin
     batches = x_incr.shape[0]
 
     # only supports a batch size of 1 for now
-
     output_= torch.empty((batches, conv_weights.shape[3], out_h, out_w), dtype=torch.float, device='cuda', memory_format=torch.channels_last)
 
-    # only supported when both side strides are equal
+
     if conv_weights.shape[1] == 3:
+        # return output_
         conv3x3_increment_ext(x_incr, mask, conv_weights, output_, stride[0])
     elif conv_weights.shape[1] == 5:
         conv5x5_increment_ext(x_incr, mask, conv_weights, output_, stride[0])
@@ -39,6 +40,7 @@ def functional_conv_module(x_incr, conv_weights, mask=None, stride=(1,1), paddin
         print(conv_weights.shape[1])
         raise NotImplementedError
 
+    # sleep(1)
     return output_
 
 

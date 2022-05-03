@@ -25,7 +25,7 @@ template<typename scalar_t=float, int KERNEL_SIZE=3, int STRIDE=1, int WARP_SIZE
 __device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar_t const dense_s_in[][WARP_SIZE], 
                             int out_c, int out_C, int in_c, int in_C, int h_in, int w_in){
 
-    int constexpr PAD_LENGTH = KERNEL_SIZE/2;
+    int constexpr PAD_LENGTH = (KERNEL_SIZE-1)/2;
 
     #pragma unroll
     for(int out_y = 0; out_y < pixelsPerBlockY; out_y++ ){
@@ -87,21 +87,16 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
         #pragma unroll
         for (int in_x = -PAD_LENGTH; in_x < w_in -PAD_LENGTH; ++in_x) {
 
-
             scalar_t const val = dense_s_in[(in_y + PAD_LENGTH) * w_in + in_x + PAD_LENGTH][in_c];
 
-            int const min_f_y = -in_y;
-            int const min_f_x = -in_x;
-            int const max_f_y = h_in - in_y - KERNEL_SIZE;
-            int const max_f_x = w_in - in_x - KERNEL_SIZE;
             int const stride_off_y = (((PAD_LENGTH-in_y) % STRIDE) + STRIDE) % STRIDE;
             int const stride_off_x = (((PAD_LENGTH-in_x) % STRIDE) + STRIDE) % STRIDE;
 
             #pragma unroll
-            for (int f_y = Utils::constexpr_max(-PAD_LENGTH + stride_off_y , min_f_y); f_y <= Utils::constexpr_min(PAD_LENGTH, max_f_y); f_y += STRIDE) {
+            for (int f_y = -Utils::constexpr_min(PAD_LENGTH - stride_off_y, in_y); f_y <= Utils::constexpr_min(PAD_LENGTH, h_in - in_y - KERNEL_SIZE); f_y += STRIDE) {
                 #pragma unroll
-                for (int f_x = Utils::constexpr_max(-PAD_LENGTH + stride_off_x, min_f_x); f_x <= Utils::constexpr_min(PAD_LENGTH, max_f_x); f_x += STRIDE) {
-                    t_out[((in_y+f_y)/STRIDE) * pixelsPerBlockX + (in_x+f_x)/STRIDE] += val * t_f[(f_y+PAD_LENGTH)*KERNEL_SIZE + f_x+ PAD_LENGTH ]; // scatter operation b0ss?
+                for (int f_x = Utils::constexpr_min(PAD_LENGTH - stride_off_x, min_f_x); f_x <= Utils::constexpr_min(PAD_LENGTH, w_in - in_x - KERNEL_SIZE); f_x += STRIDE) {
+                    t_out[((in_y+f_y)/STRIDE) * pixelsPerBlockX + (in_x+f_x)/STRIDE] += val * t_f[(f_y+PAD_LENGTH)*KERNEL_SIZE + f_x + PAD_LENGTH ]; 
                 }
             }
         }
@@ -278,6 +273,36 @@ static void conv5x5_increment_cuda_ext(
 }
 
 
+
+template <typename scalar_t, int STRIDE=1, int WARP_SIZE=32, int H_OUT_PER_BLOCK=6, int W_OUT_PER_BLOCK=6>
+static void conv1x1_increment_cuda_ext(
+    torch::Tensor const &in_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+){
+    int const out_C = out_incr.sizes()[1], out_H=out_incr.sizes()[2], out_W=out_incr.sizes()[3];
+    int const in_C = in_incr.sizes()[1], in_H=in_incr.sizes()[2], in_W=in_incr.sizes()[3];
+
+    int constexpr threads = 256;
+    int const W_up = divup(out_W, W_OUT_PER_BLOCK);
+    int const H_up = divup(out_H, H_OUT_PER_BLOCK);
+    int const C_up = divup(out_C, threads);
+    dim3 const blocks(W_up, H_up, C_up);
+    int constexpr out_channels_per_block = 32;
+    // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
+    conv_kxk_ext<scalar_t, 1, STRIDE, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
+        filter.data_ptr<scalar_t>(),
+        mask.data_ptr<bool>(),
+        in_incr.data_ptr<scalar_t>(),
+        out_incr.data_ptr<scalar_t>(),
+        in_C, in_H, in_W,
+        out_C, out_H, out_W
+    );
+
+    CUDA_CHECK_ERRORS();
+}
+
 void convkxk_increment_ext_cuda_wrapper(
     torch::Tensor const &in_incr,
     torch::Tensor const &mask,
@@ -322,6 +347,13 @@ void convkxk_increment_ext_cuda_wrapper(
         } else{
             throw std::logic_error("not implemented stride size");
         }
+    } else if(k == 1 ) {
+        conv1x1_increment_cuda_ext<float, 1, 32, 6, 6>(
+            in_incr,
+            mask,
+            filter,
+            out_incr  // expect a zero tensor
+        );
     } else {
         throw std::logic_error("Convolution kxk not implemented for this k.");
     }
