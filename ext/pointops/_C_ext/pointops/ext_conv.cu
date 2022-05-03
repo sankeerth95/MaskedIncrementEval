@@ -143,7 +143,7 @@ __global__ void conv_kxk_ext(
 
     union SMEM {
         // SparseSMEM sparse;
-        // bool mask_s_in[n_in_px_aligned][WARP_SIZE]; //bitwise operations wover WARP_SIZE: implement later
+        // bool mask_s_in[WARP_SIZE]; //bitwise operations wover WARP_SIZE: implement later
         scalar_t dense_s_in[n_in_px_aligned][WARP_SIZE];
     };
     __shared__ SMEM smem;
@@ -159,34 +159,31 @@ __global__ void conv_kxk_ext(
 
 
         for (int in_c_off = 0; in_c_off < in_C; in_c_off += WARP_SIZE) {
+
             __syncthreads();
+            const int in_c = in_c_off + lane_idx;
+            const bool valid_c = in_c < in_C;
+            __shared__ bool mask_s_in[WARP_SIZE];
+            mask_s_in[lane_idx] = valid_c ? mask[tile_start_in_y * in_W * in_C + tile_start_in_x * in_C + in_c] : false;
             for (int px_idx = warp_idx; px_idx < w_in * h_in; px_idx += n_warps) {
                 const int in_y = px_idx / w_in;
                 const int in_x = px_idx % w_in;
-
                 const int in_y_im = in_y + tile_start_in_y;
                 const int in_x_im = in_x + tile_start_in_x;
-                const int in_c = in_c_off + lane_idx;
 
-                const bool valid = in_c < in_C && in_y_im < in_H && in_y_im >= 0 && in_x_im >= 0 && in_x_im < in_W;
+                const int valid = valid_c && in_y_im < in_H && in_y_im >= 0 && in_x_im >= 0 && in_x_im < in_W;
                 if (valid) {
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
-                    // smem.mask_s_in[in_y * w_in + in_x][lane_idx] = mask[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
                 } else {
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = 0.0f;
-                    // smem.mask_s_in[in_y * w_in + in_x][lane_idx] = true;
                 }
             }
             __syncthreads();
 
             for(int in_c = 0; in_c < WARP_SIZE && in_c + in_c_off < in_C; ++in_c) {
 
-                // // do not evaluate for the whole block: 
-                // if(mask[tile_start_in_y * in_W * in_C + tile_start_in_x * in_C + in_c])
-                //     continue;
+                if (out_c < out_C && mask_s_in[in_c]) {
 
-                if (out_c < out_C) {
-                    // check on kernel size once.
                     scatter_conv<float, KERNEL_SIZE, STRIDE, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
                         &filter[(in_c_off+in_c) * KERNEL_SIZE*KERNEL_SIZE * out_C + out_c], t_out, smem.dense_s_in, 
                         out_c, out_C, in_c, in_C, h_in, w_in);
