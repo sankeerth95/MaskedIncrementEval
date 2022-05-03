@@ -169,7 +169,7 @@ __global__ void conv_kxk_ext(
                 const int in_c = in_c_off + lane_idx;
 
                 const bool valid = in_c < in_C && in_y_im < in_H && in_y_im >= 0 && in_x_im >= 0 && in_x_im < in_W;
-                if (valid && false) {
+                if (valid) {
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
                     // smem.mask_s_in[in_y * w_in + in_x][lane_idx] = mask[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
                 } else {
