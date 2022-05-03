@@ -89,13 +89,17 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
 
             scalar_t const val = dense_s_in[(in_y + PAD_LENGTH) * w_in + in_x + PAD_LENGTH][in_c];
 
+            int const min_f_y = - in_y;
+            int const min_f_x = - in_x;
+            int const max_f_y = h_in - in_y - KERNEL_SIZE;
+            int const max_f_x = w_in - in_x - KERNEL_SIZE;
             int const stride_off_y = (((PAD_LENGTH-in_y) % STRIDE) + STRIDE) % STRIDE;
             int const stride_off_x = (((PAD_LENGTH-in_x) % STRIDE) + STRIDE) % STRIDE;
 
             #pragma unroll
-            for (int f_y = -Utils::constexpr_min(PAD_LENGTH - stride_off_y, in_y); f_y <= Utils::constexpr_min(PAD_LENGTH, h_in - in_y - KERNEL_SIZE); f_y += STRIDE) {
+            for (int f_y = Utils::constexpr_max(-PAD_LENGTH + stride_off_y, min_f_y); f_y <= Utils::constexpr_min(PAD_LENGTH, max_f_y); f_y += STRIDE) {
                 #pragma unroll
-                for (int f_x = Utils::constexpr_min(PAD_LENGTH - stride_off_x, min_f_x); f_x <= Utils::constexpr_min(PAD_LENGTH, w_in - in_x - KERNEL_SIZE); f_x += STRIDE) {
+                for (int f_x = Utils::constexpr_max(-PAD_LENGTH + stride_off_x, min_f_x); f_x <= Utils::constexpr_min(PAD_LENGTH, max_f_x); f_x += STRIDE) {
                     t_out[((in_y+f_y)/STRIDE) * pixelsPerBlockX + (in_x+f_x)/STRIDE] += val * t_f[(f_y+PAD_LENGTH)*KERNEL_SIZE + f_x + PAD_LENGTH ]; 
                 }
             }
@@ -157,13 +161,15 @@ __global__ void conv_kxk_ext(
         for (int in_c_off = 0; in_c_off < in_C; in_c_off += WARP_SIZE) {
             __syncthreads();
             for (int px_idx = warp_idx; px_idx < w_in * h_in; px_idx += n_warps) {
-                const int in_y = px_idx / w_in; 
+                const int in_y = px_idx / w_in;
                 const int in_x = px_idx % w_in;
+
+                const int in_y_im = in_y + tile_start_in_y;
+                const int in_x_im = in_x + tile_start_in_x;
                 const int in_c = in_c_off + lane_idx;
-                const bool valid = in_c < in_C;
-                if (valid) {
-                    const int in_y_im = in_y + tile_start_in_y;
-                    const int in_x_im = in_x + tile_start_in_x; 
+
+                const bool valid = in_c < in_C && in_y_im < in_H && in_y_im >= 0 && in_x_im >= 0 && in_x_im < in_W;
+                if (valid && false) {
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
                     // smem.mask_s_in[in_y * w_in + in_x][lane_idx] = mask[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
                 } else {
