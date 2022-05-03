@@ -26,7 +26,6 @@ def functional_conv_module(x_incr, conv_weights, mask=None, stride=(1,1), paddin
     out_C = conv_weights.shape[3]
     batches = x_incr.shape[0]
     output_= torch.empty((batches, out_C, out_H, out_W), dtype=torch.float, device='cuda', memory_format=torch.channels_last)
-
     if conv_weights.shape[1] == 3:
         conv3x3_increment_ext(x_incr, mask, conv_weights, output_, stride[0])
     elif conv_weights.shape[1] == 5:

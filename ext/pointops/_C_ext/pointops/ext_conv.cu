@@ -157,21 +157,20 @@ __global__ void conv_kxk_ext(
             t_out[i] = 0.0f;
         }
 
-
         for (int in_c_off = 0; in_c_off < in_C; in_c_off += WARP_SIZE) {
 
             __syncthreads();
-            const int in_c = in_c_off + lane_idx;
-            const bool valid_c = in_c < in_C;
+            int const in_c = in_c_off + lane_idx;
+            bool const valid_c = in_c < in_C && tile_start_in_y < out_H && tile_start_in_y >= 0 && tile_start_in_x < out_W && tile_start_in_x >= 0;
             __shared__ bool mask_s_in[WARP_SIZE];
             mask_s_in[lane_idx] = valid_c ? mask[tile_start_in_y * in_W * in_C + tile_start_in_x * in_C + in_c] : false;
             for (int px_idx = warp_idx; px_idx < w_in * h_in; px_idx += n_warps) {
-                const int in_y = px_idx / w_in;
-                const int in_x = px_idx % w_in;
-                const int in_y_im = in_y + tile_start_in_y;
-                const int in_x_im = in_x + tile_start_in_x;
+                int const in_y = px_idx / w_in;
+                int const in_x = px_idx % w_in;
+                int const in_y_im = in_y + tile_start_in_y;
+                int const in_x_im = in_x + tile_start_in_x;
 
-                const int valid = valid_c && in_y_im < in_H && in_y_im >= 0 && in_x_im >= 0 && in_x_im < in_W;
+                int const valid = valid_c && in_y_im < in_H && in_x_im < in_W;
                 if (valid) {
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
                 } else {

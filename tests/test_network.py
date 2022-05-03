@@ -8,7 +8,6 @@ from benchmark.model_handlers import BaselineModelhandler, IncrModelHandler
 
 class TestNetwork(unittest.TestCase):
 
-
     def test_incr(self):
 
         device = 'cuda'

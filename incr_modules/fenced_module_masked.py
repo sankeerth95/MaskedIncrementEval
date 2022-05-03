@@ -12,7 +12,7 @@ from typing import overload, Union
 from metrics.structural_sparsity import field_channel_sparsity
 
 
-k_init = 0.01
+k_init = 0.0001
 def print_sparsity(x, prefix: str = ""):
     return
     print(prefix, float(field_channel_sparsity(x, field_size=5, threshold=k_init).cpu().numpy())  )
@@ -39,7 +39,7 @@ class AccumStreamManager:
 # accumulates inputs: have to make this conditional
 class IncrementReserve:
     def __init__(self, x_init: Union[SpOrDense, None] = None):
-        self.accum_stream = AccumStreamManager.createAccumStream() 
+        # self.accum_stream = AccumStreamManager.createAccumStream() 
         if x_init == None:
             self.reservoir = None
         else:
@@ -70,7 +70,7 @@ class IncrementMaskModule(nn.Module):
 # filter: only allow significant elements to pass through
 # secret sauce: MASKIFY!
 class KFencedMaskModule(IncrementMaskModule):
-    def __init__(self, k: float=0.001):
+    def __init__(self, k: float=0.01):
         super().__init__()
         # internally defined reserves
         self.in_reserve = IncrementReserve()
@@ -82,12 +82,10 @@ class KFencedMaskModule(IncrementMaskModule):
 
     # accumulate operations: sparsed
     def forward(self, incr: Masked) -> Masked:
-        return incr
         T1 = self.delta.reservoir + incr                    # critical path; could be sparse
-        f_delta: Sp = self.floor_by_k(T1)                   # critical path; could be sparse
-        self.delta.reservoir = T1 - f_delta                       # out of order; sparse
+        f_delta = self.floor_by_k(T1)                   # critical path; could be sparse
+        self.delta.update_reservoir(T1 - f_delta)                       # out of order; sparse
         self.in_reserve.accumulate(f_delta)         # out of order; sparse: conditional: doesn't need to be done
-#        print('sparsity = ', 1.-f_delta._nnz()/f_delta.numel())
         return f_delta
 
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
