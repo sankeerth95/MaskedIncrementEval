@@ -34,11 +34,7 @@ class TestNetwork(unittest.TestCase):
         diff_count = lambda x: float( torch.abs(x).count_nonzero().detach().cpu().numpy() )
         max_diff   = lambda x: float( torch.abs(x).max().detach().cpu().numpy() )
 
-
-
         print(max_diff(c - c_base))
         print(diff_count(c - c_base))
-
-
 
 
