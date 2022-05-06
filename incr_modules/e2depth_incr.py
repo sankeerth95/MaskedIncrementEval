@@ -1,181 +1,13 @@
-from ast import Assert
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from ev_projs.rpg_e2depth.model.model import BaseE2VID
-from .masked_types import Masked, Sp, DenseT, SpOrDense
+from .masked_types import Masked, DenseT, SpOrDense
 import ext.pointops.pointops_functional as pf
 
-from typing import overload, Union
+from typing import Tuple, overload
+from .mask_incr_modules import IncrementMaskModule, print_sparsity, NonlinearPointOpIncr, IncrementReserve, conv2d_from_module,bn2d_from_module,interpolate_from_module, KFencedMaskModule, PointwiseMultiplyIncr
 
-
-from metrics.structural_sparsity import field_channel_sparsity
-
-
-k_init = 0.0001
-def print_sparsity(x, prefix: str = ""):
-    return
-    print(prefix, float(field_channel_sparsity(x, field_size=5, threshold=k_init).cpu().numpy())  )
-
-
-# singleton class; not the best way but whatev
-class AccumStreamManager:
-
-    def __init__(self):
-        self.s = torch.cuda.Stream()
-    
-    def get_stream(self):
-        return self.s
-
-    instance = None
-    @classmethod
-    def createAccumStream(cls):
-        if cls.instance is None:
-            cls.instance = cls()
-        return cls.instance
-
-
-
-# accumulates inputs: have to make this conditional
-class IncrementReserve:
-    def __init__(self, x_init: Union[SpOrDense, None] = None):
-        # self.accum_stream = AccumStreamManager.createAccumStream() 
-        if x_init == None:
-            self.reservoir = None
-        else:
-            self.reservoir = x_init.clone().detach()
-
-    # dense/sparse accumulate accumulate
-    def accumulate(self, incr: Masked):
-        self.reservoir.add_(incr)
-        # return
-        # with torch.cuda.stream(self.accum_stream.get_stream()):
-        #     self.reservoir.add_(incr)
-
-    def update_reservoir(self, x: torch.Tensor):
-        self.reservoir = x.clone().detach() # not in place right now :(
-
-# input output increments: interface for incremental modules! 
-class IncrementMaskModule(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x: Masked) -> Masked: ...
-
-    # called at the end of non-increment forward pass, if needed.
-    def forward_refresh_reservoirs(self, x: DenseT) -> DenseT: 
-        return x
-
-
-# filter: only allow significant elements to pass through
-# secret sauce: MASKIFY!
-class KFencedMaskModule(IncrementMaskModule):
-    def __init__(self, k: float=0.01):
-        super().__init__()
-        # internally defined reserves
-        self.in_reserve = IncrementReserve()
-        self.delta = IncrementReserve() # input tensor dimensions: dense tensor
-        self.k = k
-
-    def floor_by_k(self, T: Masked) -> Masked:  # TODO: implement for sparse inputs.
-        return (self.k*torch.floor(0.5 + T/self.k))  
-
-    # accumulate operations: sparsed
-    def forward(self, incr: Masked) -> Masked:
-        T1 = self.delta.reservoir + incr                    # critical path; could be sparse
-        f_delta = self.floor_by_k(T1)                   # critical path; could be sparse
-        self.delta.update_reservoir(T1 - f_delta)                       # out of order; sparse
-        self.in_reserve.accumulate(f_delta)         # out of order; sparse: conditional: doesn't need to be done
-        return f_delta
-
-    def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
-        self.in_reserve.update_reservoir(x)
-        self.delta.update_reservoir(torch.zeros_like(x))
-        return x
-
-def IncrPointwiseMultiply(x1_incr: SpOrDense, x1: IncrementReserve, x2_incr, x2: IncrementReserve):
-    # return x1_incr
-    return x1_incr*x2_incr + x2.reservoir*x1_incr + x1.reservoir*x2_incr    # good luck with this shit.
-
-class PointwiseMultiplyIncr(IncrementMaskModule):
-    def __init__(self, x1res_module: IncrementReserve, x2res_module: IncrementReserve):
-        super().__init__()
-        # define reserves:
-        self.x1_res: IncrementReserve = x1res_module # only a reference
-        self.x2_res: IncrementReserve = x2res_module # only a reference
-
-
-    def forward(self, x1_incr: Masked, x2_incr: SpOrDense) -> SpOrDense:
-        output_incr = IncrPointwiseMultiply(x1_incr, self.x1_res, x2_incr, self.x2_res)
-        return output_incr
-
-    def forward_refresh_reservoirs(self, x1: DenseT, x2: DenseT) -> DenseT:
-        return x1*x2
-
-# nonlinear operations which are point ops; dense modules only
-class NonlinearPointOpIncr(IncrementMaskModule):
-    def __init__(self, res_in: IncrementReserve, op=torch.tanh):
-        super().__init__()
-        self.reservoir_in = res_in
-        self.op = op
-
-    @overload
-    def forward(self, x_incr: DenseT) -> DenseT: ...
-
-    def forward(self, x_incr: Masked, x_incr_mask: Masked=None) -> Masked:
-        # compute only for these inputs.
-        return self._nonlin(x_incr, x_incr_mask)
-
-    # x is like an input: don't update external reservoirs
-    def forward_refresh_reservoirs(self, x: DenseT):
-        return self.op(x)
-
-    # need to be replaced with c++ binding
-    def _nonlin(self, x_incr, x_incr_mask=None):
-        output_incr = self.op(self.reservoir_in.reservoir + x_incr) - self.op(self.reservoir_in.reservoir)
-        return output_incr
-
-
-class nnLinearIncr(IncrementMaskModule):
-    def __init__(self):
-        super().__init__()
-        self.linear = nn.Linear()
-    
-    @overload
-    def forward(self, x_incr: DenseT) -> DenseT: ...
-    
-    # fully connected implementation
-    def forward(self, x_incr: SpOrDense) -> SpOrDense:
-        return F.linear(x_incr, self.linear.weight)
-
-    def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
-        return F.linear(x, self.linear.weight, self.linear.bias)
-
-
-def conv2d_from_module(x: Masked, conv_weights, conv_bias=None, stride=(1,1), padding=(1, 1), forward_refresh=False) -> Masked:
-    if not forward_refresh:
-        output_ = pf.functional_conv_module(x, conv_weights, mask=None, stride=stride, padding=padding)
-    else:
-        output_ = F.conv2d(x, torch.permute(conv_weights, (3, 0, 1, 2)), bias=conv_bias, 
-        stride=stride, padding=padding)
-
-    return output_
-
-
-def transposed_conv2d_from_module(x: Masked, gates: nn.ConvTranspose2d, bias=True) -> Masked:
-    gate_bias = gates.bias if bias else None
-    return F.conv_transpose2d(x, gates.weight, bias=gate_bias, stride=gates.stride, \
-            padding=gates.padding, output_padding=gates.output_padding, dilation=gates.dilation, groups=gates.groups)
-
-
-def bn2d_from_module(x: Masked, bnm: nn.BatchNorm2d, bias=True) -> Masked:
-    bnm_running_mean = bnm.running_mean if bias else None
-    bnm_bias = bnm.bias if bias else None
-    return F.batch_norm(x, running_mean=bnm_running_mean, running_var=bnm.running_var, weight=bnm.weight, bias=bnm_bias, training=bnm.training, momentum=bnm.momentum, eps=bnm.eps)
-
-
-def interpolate_from_module(x: Masked) -> Masked:
-    return F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
 
 
 # does not include a sparse version
@@ -188,7 +20,7 @@ class ConvLayerIncr(IncrementMaskModule):
         self.conv2d_weights = pf.convert_filter_out_channels_last(self.conv2d.weight).cuda()
 
         # self.sparseconv2d = SparseNet(self.conv2d)
-        self.kf = KFencedMaskModule(k=k_init)
+        self.kf = KFencedMaskModule()
         if activation is not None:
             op = getattr(torch, activation, 'relu')
             self.activation_in_res = IncrementReserve()
@@ -201,7 +33,6 @@ class ConvLayerIncr(IncrementMaskModule):
             self.norm_layer = nn.BatchNorm2d(out_channels)
         elif norm == 'IN':
             self.norm_layer = nn.InstanceNorm2d(out_channels, track_running_stats=True)
-
 
 
     # fully connected implementation
@@ -252,7 +83,7 @@ class ConvLSTMIncr(IncrementMaskModule):
         self.Gates = nn.Conv2d(input_size + hidden_size, 4 * hidden_size, kernel_size, padding=pad)
         self.Gates_weights = pf.convert_filter_out_channels_last(self.Gates.weight).cuda()
 
-        self.kf = KFencedMaskModule(k=k_init)
+        self.kf = KFencedMaskModule()
         #nn.Conv2d(input_size + hidden_size, 4 * hidden_size, kernel_size, padding=pad)
 
 
@@ -280,8 +111,6 @@ class ConvLSTMIncr(IncrementMaskModule):
         self.cg_tanh = NonlinearPointOpIncr(self.cg_res, torch.tanh)
         self.c_tanh = NonlinearPointOpIncr(self.c_res, torch.tanh)
 
-    @overload
-    def forward(self, input_incr: torch.Tensor, prev_state_incr: torch.Tensor) -> torch.Tensor: ...
 
     def forward(self, input_incr: Masked, prev_state_incr: Masked):
 
@@ -304,14 +133,7 @@ class ConvLSTMIncr(IncrementMaskModule):
 
         prev_h_incr, prev_c_incr = prev_state_incr
 
-        if input_incr.is_contiguous():
-            raise AssertionError
-        if prev_h_incr.is_contiguous():
-            raise AssertionError
-
         stacked_inputs_incr = torch.cat((input_incr, prev_h_incr), 1)
-        if stacked_inputs_incr.is_contiguous():
-            raise AssertionError
         gates_incr = conv2d_from_module(stacked_inputs_incr, self.Gates_weights, conv_bias=None, stride=self.Gates.stride, padding=self.Gates.padding)
 
         gates_incr = self.kf(gates_incr)
@@ -440,7 +262,7 @@ class ResidualBlockIncr(IncrementMaskModule):
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=bias)
         self.conv1_weights = pf.convert_filter_out_channels_last(self.conv1.weight).cuda()
 
-        self.kf1 = KFencedMaskModule(k=k_init)
+        self.kf1 = KFencedMaskModule()
 
         self.norm = norm
         if norm == 'BN':
@@ -461,7 +283,7 @@ class ResidualBlockIncr(IncrementMaskModule):
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
         self.conv2_weights = pf.convert_filter_out_channels_last(self.conv2.weight).cuda()
 
-        self.kf2 = KFencedMaskModule(k=k_init)
+        self.kf2 = KFencedMaskModule()
 
         self.downsample = downsample
 
@@ -583,7 +405,7 @@ class UpsampleConvLayerIncr(IncrementMaskModule):
         bias = False if norm == 'BN' else True
         self.conv2d = nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
         self.conv2d_weights = pf.convert_filter_out_channels_last(self.conv2d.weight).cuda()
-        self.kf = KFencedMaskModule(k=k_init)
+        self.kf = KFencedMaskModule()
         if activation is not None:
             op = getattr(torch, activation, 'relu')
             self.act_in_res = IncrementReserve()
@@ -718,13 +540,13 @@ class UNetRecurrentIncr(BaseUNetIncr):
         x_incr = self.head(x_incr)
 
         head = x_incr
-
+        
         print_sparsity(x_incr, "after convhead")
 
         if prev_states_incr is None:
             prev_states_incr = [None] * self.num_encoders
 
-
+        return x_incr
         # encoder
         blocks = []
         states_incr = []
@@ -806,7 +628,7 @@ class E2VIDRecurrentIncr(BaseE2VID, IncrementMaskModule):
                                            norm=self.norm,
                                            use_upsample_conv=self.use_upsample_conv)
 
-    def forward(self, input_sample: Masked):
+    def forward(self, input_sample: Tuple[Masked]):
         event_tensor, prev_states = input_sample
         img_pred, states = self.unetrecurrent.forward(event_tensor, prev_states)
         return img_pred, states

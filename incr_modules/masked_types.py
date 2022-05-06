@@ -1,5 +1,5 @@
 import torch
-from typing import Union
+from typing import  List, Union
 
 _device='cuda'
 
@@ -12,4 +12,3 @@ Sp = SparseTypes[_device]
 DenseT = torch.Tensor
 SpOrDense = Union[Sp, DenseT]
 Masked = torch.Tensor
-
