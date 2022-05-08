@@ -13,7 +13,8 @@ class IncrementMaskModule(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, x: Masked) -> Masked: ...
+    def forward(self, x: Masked) -> Masked: 
+        raise NotImplementedError
 
     # called at the end of non-increment forward pass, if needed.
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT: 
@@ -87,46 +88,47 @@ class NonlinearPointOpIncr(IncrementMaskModule):
         return [output_incr, x_incr[1]]
 
 
-class nnLinearIncr(nn.Linear, IncrementMaskModule):
-
+class nnLinearIncr(nn.Linear):
     
     # fully connected implementation
     def forward(self, x_incr: Masked) -> Masked:
         return [F.linear(x_incr[0], self.weight, bias=None), True|x_incr[1]]
 
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
-        return F.linear(x, self.linear.weight, self.linear.bias)
+        return super().forward(x)
+
+        # return F.linear(x, self.weight, self.bias)
 
 
 #linear module
 class nnConvIncr(nn.Conv2d):
 
     def forward(self, x_incr):
-        return x_incr
+        raise NotImplementedError
 
 
     def forward_refresh_reservoirs(self, x):
-        return x
+        return super().forward(x)
 
 #linear module
 class nnBatchNorm2dIncr(nn.BatchNorm2d):
 
     def forward(self, x_incr):
-        return x_incr
+        raise NotImplementedError
 
 
     def forward_refresh_reservoirs(self, x):
-        return x
+        return super().forward(x)
 
 
 class nnMaxPool2dIncr(nn.MaxPool2d):
 
     def forward(self, x_incr):
-        return x_incr
+        raise NotImplementedError
 
 
     def forward_refresh_reservoirs(self, x):
-        return x
+        return super().forward(x)
 
 
 
@@ -134,25 +136,18 @@ class nnMaxPool2dIncr(nn.MaxPool2d):
 class nnAdaptiveAvgPool2dIncr(nn.AdaptiveAvgPool2d):
 
     def forward(self, x_incr):
-        return x_incr
+        raise NotImplementedError
 
     def forward_refresh_reservoirs(self, x):
-        return x
-
-
+        return super().forward(x)
 
 
 class nnSequentialIncr(nn.Sequential):
 
-    def __init__(self, *module_list):
-        nn.Sequential.__init__(self, *module_list)
-
-
     def forward_refresh_reservoirs(self, x):
-        
         for module in self:
-            input = module.forward_refresh_reservoirs(input)
-        return input
+            x = module.forward_refresh_reservoirs(x)
+        return x
 
 
 
