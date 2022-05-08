@@ -5,10 +5,9 @@ from ev_projs.rpg_e2depth.model.model import BaseE2VID
 from .masked_types import Masked, DenseT, SpOrDense
 import ext.pointops.pointops_functional as pf
 
-from typing import Tuple, overload
-from .mask_incr_modules import IncrementMaskModule, print_sparsity, NonlinearPointOpIncr, IncrementReserve, conv2d_from_module,bn2d_from_module,interpolate_from_module, KFencedMaskModule, PointwiseMultiplyIncr
-
-
+from .mask_incr_modules import IncrementMaskModule, NonlinearPointOpIncr, IncrementReserve,  KFencedMaskModule, PointwiseMultiplyIncr
+from .utils import print_sparsity
+from .mask_incr_functional import conv2d_from_module, bn2d_from_module, interpolate_from_module
 
 # does not include a sparse version
 class ConvLayerIncr(IncrementMaskModule):
@@ -628,8 +627,7 @@ class E2VIDRecurrentIncr(BaseE2VID, IncrementMaskModule):
                                            norm=self.norm,
                                            use_upsample_conv=self.use_upsample_conv)
 
-    def forward(self, input_sample: Tuple[Masked]):
-        event_tensor, prev_states = input_sample
+    def forward(self, event_tensor: Masked, prev_states: Masked):
         img_pred, states = self.unetrecurrent.forward(event_tensor, prev_states)
         return img_pred, states
 
