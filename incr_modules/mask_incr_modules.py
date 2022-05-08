@@ -1,4 +1,3 @@
-from typing import _VT_co
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -89,8 +88,7 @@ class NonlinearPointOpIncr(IncrementMaskModule):
 
 
 class nnLinearIncr(nn.Linear, IncrementMaskModule):
-    def __init__(self, in_features, out_features):
-        super().__init__(in_features, out_features)
+
     
     # fully connected implementation
     def forward(self, x_incr: Masked) -> Masked:
@@ -146,8 +144,8 @@ class nnAdaptiveAvgPool2dIncr(nn.AdaptiveAvgPool2d):
 
 class nnSequentialIncr(nn.Sequential):
 
-    def __init__(self, module_list):
-        super().__init__(module_list)
+    def __init__(self, *module_list):
+        nn.Sequential.__init__(self, *module_list)
 
 
     def forward_refresh_reservoirs(self, x):
