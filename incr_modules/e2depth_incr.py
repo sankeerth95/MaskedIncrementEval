@@ -545,7 +545,6 @@ class UNetRecurrentIncr(BaseUNetIncr):
         if prev_states_incr is None:
             prev_states_incr = [None] * self.num_encoders
 
-        return x_incr
         # encoder
         blocks = []
         states_incr = []
@@ -631,8 +630,7 @@ class E2VIDRecurrentIncr(BaseE2VID, IncrementMaskModule):
         img_pred, states = self.unetrecurrent.forward(event_tensor, prev_states)
         return img_pred, states
 
-    def forward_refresh_reservoirs(self, input_sample):
-        event_tensor, prev_states = input_sample
+    def forward_refresh_reservoirs(self, event_tensor, prev_states):
         img_pred, states = self.unetrecurrent.forward_refresh_reservoirs(event_tensor, prev_states)
         return img_pred, states
 

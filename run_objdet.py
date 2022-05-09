@@ -19,36 +19,36 @@ if __name__ == '__main__':
     #         width=346, height=260, window_size = 0.05, time_shift = 0.05) # 1 ms time shift
 
     height, width = 180, 240
+    dataset_path = '/home/sankeerth/ev/rpg_asynet/data/NCaltech101_ObjectDetection/'
+    dataset = NCaltech101_ObjectDetection(
+        dataset_path, 
+        'all', 
+        height, 
+        width, 
+        25000, 
+        mode='validation', 
+        event_representation='histogram', 
+        shuffle=False
+    )
 
-
-
-    lp = '/home/sankeerth/ev/rpg_asynet/log/20220508-215001/checkpoints/events.out.tfevents.1652061002.sankeerth-XPS-8940.28013.0'
-    m = torch.load(lp)
-    model = DenseObjectDetIncr(nr_classes, in_c=nr_input_channels,
+    model = DenseObjectDetIncr(dataset.nr_classes, in_c=2,
                                     small_out_map=(True))
+    lp = '/home/sankeerth/ev/rpg_asynet/log/20220508-215001/checkpoints/model_step_49.pth'
+    m = torch.load(lp)
     model.load_state_dict(m['state_dict'])
     model = model.to(device)
     model.eval()
 
-
-    dataset_path = '/home/sankeerth/ev/rpg_asynet/data/NCaltech101_ObjectDetection/'
-    dataset_builder = NCaltech101_ObjectDetection(dataset_path)
-    dataset = dataset_builder(dataset_path,
-                              'all',
-                              height,
-                              width,
-                              25000,
-                              mode='validation',
-                              event_representation='histogram')
-
     val_loader = DataLoader(dataset)
-
 
     model_input_size = torch.tensor([191, 255])
     sum_accuracy = 0
     sum_loss = 0
     for i_batch, sample_batched in enumerate(val_loader):
         event, bounding_box, histogram = sample_batched
+
+        bounding_box = bounding_box.to(device)
+        histogram = histogram.to(device) 
 
         # Convert spatial dimension to model input size
         histogram = F.interpolate(histogram.permute(0, 3, 1, 2),
@@ -61,7 +61,7 @@ if __name__ == '__main__':
                                         / height).long()
 
         with torch.no_grad():
-            model_output = model(histogram)
+            model_output = model.forward_refresh_reservoirs(histogram)
             loss = yoloLoss(model_output, bounding_box, model_input_size)[0]
             # detected_bbox = yoloDetect(model_output, self.model_input_size.to(model_output.device),
             #                             threshold=0.3)
@@ -74,8 +74,6 @@ if __name__ == '__main__':
     print(f"Test Loss: {sum_loss}")
 
         # show_tensor_image()
-
-
 
 
 

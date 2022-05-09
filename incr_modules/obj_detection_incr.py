@@ -45,7 +45,7 @@ class DenseObjectDetIncr(nn.Module):
                 nnMaxPool2dIncr(kernel_size=self.kernel_size, stride=2)
             )
         else:
-            return nn.Sequential(
+            return nnSequentialIncr(
                 nnConvIncr(in_c, out_c, kernel_size=self.kernel_size, padding=(1, 1), bias=False),
                 nnBatchNorm2dIncr(out_c),
                 nnReluIncr(),
