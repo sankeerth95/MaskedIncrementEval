@@ -1,10 +1,8 @@
 import random
 from os.path import join
 from .base_event_dataset import EventDataset
-from .utils.util import first_element_greater_than, last_element_less_than, normalize_voxelgrid, events_to_voxel_grid_absT
+from .utils.util import event_histogram, first_element_greater_than, last_element_less_than, normalize_voxelgrid, events_to_voxel_grid_absT
 import numpy as np
-
-
 
 
 class RawEventsDataset(EventDataset):
@@ -26,7 +24,7 @@ class RawEventsDataset(EventDataset):
 
 class ContinuousEventsRawDataset(EventDataset):
 
-    def __init__(self, base_folder, event_folder, start_time=0, stop_time=0, transform=None, normalize=True, window_size = 0.02, time_shift=0.01, delta=0) :
+    def __init__(self, base_folder, event_folder, start_time=0, stop_time=0, transform=None, normalize=True, window_size = 0.05, time_shift=0.001, delta=0) :
         super().__init__(base_folder, event_folder, start_time=start_time, stop_time=stop_time, transform=transform, normalize=normalize)
 
         self.window_size = window_size
@@ -54,11 +52,11 @@ class ContinuousEventsRawDataset(EventDataset):
 
     def __len__(self):
         return self.upperlimit_idx - self.lowerlimit_idx + 1
-    
+
     def __getitem__(self, i):
 
         timestamp_start = (self.lowerlimit_idx + i)*self.time_shift + self.delta
-        timestamp_end = timestamp_start + self.window_size + self.delta
+        timestamp_end = timestamp_start + self.window_size
 
         first_file_idx = int(max(first_element_greater_than(self.stamps, timestamp_start)[0] - 1, self.first_valid_idx))
         last_file_idx = int(min(last_element_less_than(self.stamps, timestamp_end)[0]+1, self.last_valid_idx))
@@ -68,7 +66,8 @@ class ContinuousEventsRawDataset(EventDataset):
             events_raw.append( np.load(join(self.event_folder, 'events_{:010d}.npy'.format(file_idx))) )
 
         events_raw = np.array(np.concatenate(events_raw))
-
+        # self.initial_stamp = 0.001
+        # print(events_raw[:, 0]/1e9, self.initial_stamp, self.initial_stamp + timestamp_start)
         idx_start = first_element_greater_than(events_raw[:,0]/1e9, self.initial_stamp + timestamp_start)[0]
         idx_end = last_element_less_than(events_raw[:,0]/1e9, self.initial_stamp + timestamp_end)[0]
 
@@ -77,15 +76,21 @@ class ContinuousEventsRawDataset(EventDataset):
 
 class ContinuousEventsDataset(ContinuousEventsRawDataset):
 
-    def __init__(self, base_folder, event_folder, width, height, start_time=0, stop_time=0, transform=None, normalize=True, window_size = 0.05, time_shift=0.00001, num_bins=5, delta=0.):
+    def __init__(self, base_folder, event_folder, width, height, start_time=0, stop_time=0, transform=None, normalize=False, evframe_type='voxelgrid', window_size = 0.05, time_shift=0.001, num_bins=5, delta=0.):
         super().__init__(base_folder, event_folder, start_time, stop_time, transform, normalize, window_size, time_shift, delta=delta)
         self.width = width
         self.height = height
         self.num_bins = num_bins
+        self.evframe_type = evframe_type
     
     def __getitem__(self, i):
         events_raw, startT = super().__getitem__(i)
-        event_voxel_grid = events_to_voxel_grid_absT(events_raw, num_bins=self.num_bins, width=self.width, height=self.height, deltaT=self.window_size, startT=startT)
+        if self.evframe_type == 'histogram':
+            event_voxel_grid = event_histogram(events_raw, W=self.width, H=self.height)
+        elif self.evframe_type == 'voxelgrid':
+            event_voxel_grid = events_to_voxel_grid_absT(events_raw, num_bins=self.num_bins, width=self.width, height=self.height, deltaT=self.window_size, startT=startT)
+        else:
+            raise NotImplementedError
 
         if self.normalize:
             event_voxel_grid = normalize_voxelgrid(event_voxel_grid)
@@ -96,9 +101,9 @@ class ContinuousEventsDataset(ContinuousEventsRawDataset):
 
 class ShiftedRawEventsDataset(ContinuousEventsDataset):
 
-    def __init__(self, base_folder, event_folder, width, height, start_time=0, stop_time=0, transform=None, normalize=True, delta=0.):
-        super().__init__(base_folder, event_folder, width, height, start_time, stop_time, transform, normalize, window_size = 0.05, time_shift=0.001, num_bins=5, delta=0.)
-        self.ci_shifted = ContinuousEventsDataset(base_folder, event_folder, width, height, start_time, stop_time, transform, normalize, window_size = 0.05, time_shift=0.001, num_bins=5, delta=delta)
+    def __init__(self, base_folder, event_folder, width, height, start_time=0, stop_time=0, transform=None, normalize=True, time_shift=.001, delta=0.):
+        super().__init__(base_folder, event_folder, width, height, start_time, stop_time, transform, normalize, window_size = 0.05, time_shift=time_shift, num_bins=5, delta=0.)
+        self.ci_shifted = ContinuousEventsDataset(base_folder, event_folder, width, height, start_time, stop_time, transform, normalize, window_size = 0.05, time_shift=time_shift, num_bins=5, delta=delta)
         self.length = min(self.length, len(self.ci_shifted))
 
     def __getitem__(self, i):
