@@ -169,7 +169,6 @@ class ClassifierIncrEval(nn.Module):
         return pred, vox
 
 
-
     def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
         B, C, H, W = x.shape
         if H > W:
@@ -186,7 +185,6 @@ class ClassifierIncrEval(nn.Module):
     def forward_refresh_reservoir(self, x):
         vox = self.quantization_layer.forward(x)
         vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
-        print(vox_cropped.shape)
         pred = self.classifier.forward_refresh_reservoirs(vox_cropped)
         return pred, vox
 

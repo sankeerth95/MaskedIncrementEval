@@ -150,5 +150,18 @@ class nnSequentialIncr(nn.Sequential):
         return x
 
 
+class nnReluIncr(NonlinearPointOpIncr):
+    def __init__(self):
+        self.in_res = IncrementReserve() 
+        NonlinearPointOpIncr.__init__(self, self.in_res, torch.relu)
 
+    def forward(self, x_incr):
+        out = super().forward(x_incr)
+        self.in_res.accumulate(x_incr)
+        return out
+
+    def forward_refresh_reservoirs(self, x: DenseT):
+        out = super().forward_refresh_reservoirs(x)
+        self.in_res.update_reservoir(x)
+        return out
 
