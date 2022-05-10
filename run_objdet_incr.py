@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 from incr_modules.obj_detection_incr import DenseObjectDetIncr
 from ev_projs.rpg_async.models.yolo_loss import yoloLoss
 from ev_projs.rpg_async.dataloader.dataset import NCaltech101_ObjectDetection
+from torch.profiler import profile, record_function, ProfilerActivity
 
 
 
@@ -45,39 +46,51 @@ if __name__ == '__main__':
     sum_accuracy = 0
     sum_loss = 0
 
-    for i_batch, sample_batched in enumerate(val_loader):
-        event, bounding_box, histogram = sample_batched
+    with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
 
-        bounding_box = bounding_box.to(device)
-        histogram = histogram.to(device) 
+        for i_batch, sample_batched in enumerate(val_loader):
 
-        # Convert spatial dimension to model input size
-        histogram = F.interpolate(histogram.permute(0, 3, 1, 2),
-                                                    torch.Size(model_input_size))
+            if i_batch == 20:
+                break
 
-        # Change x, width and y, height
-        bounding_box[:, :, [0, 2]] = (bounding_box[:, :, [0, 2]] * model_input_size[1].float()
-                                        / width).long()
-        bounding_box[:, :, [1, 3]] = (bounding_box[:, :, [1, 3]] * model_input_size[0].float()
-                                        / height).long()
 
-        with torch.no_grad():
+            event, bounding_box, histogram = sample_batched
 
-            if i_batch%1000 == 0:
-                model_output = model.forward_refresh_reservoirs(histogram)
-                histogram_prev = histogram
-            else:
-                out, mask = model(histogram - histogram_prev)
-                model_output += out
-                histogram_prev = histogram
+            bounding_box = bounding_box.to(device)
+            histogram = histogram.to(device) 
 
-            loss = yoloLoss(model_output, bounding_box, model_input_size)[0]
+            # Convert spatial dimension to model input size
+            histogram = F.interpolate(histogram.permute(0, 3, 1, 2),
+                                                        torch.Size(model_input_size))
+
+            # Change x, width and y, height
+            bounding_box[:, :, [0, 2]] = (bounding_box[:, :, [0, 2]] * model_input_size[1].float()
+                                            / width).long()
+            bounding_box[:, :, [1, 3]] = (bounding_box[:, :, [1, 3]] * model_input_size[0].float()
+                                            / height).long()
+
+            with torch.no_grad():
+                if i_batch%1 == 0:
+                    with record_function("model_inference_base"):
+                        model_output = model.forward_refresh_reservoirs(histogram)
+                        histogram_prev = histogram
+                else:
+                    with record_function("model_inference"):
+                        out, mask = model(histogram - histogram_prev)
+                        model_output += out
+                        histogram_prev = histogram
+
+            # loss = yoloLoss(model_output, bounding_box, model_input_size)[0]
+
+
             # detected_bbox = yoloDetect(model_output, self.model_input_size.to(model_output.device),
             #                             threshold=0.3)
             # detected_bbox = nonMaxSuppression(detected_bbox, iou=0.6)
             # detected_bbox = detected_bbox.cpu().numpy()
 
-        sum_loss += loss
+        # sum_loss += loss
+
+    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=30))
 
 
     print(f"Test Loss: {sum_loss}")
