@@ -1,6 +1,6 @@
 import torch
 import torch.nn.functional as F
-from incr_modules.fenced_module_masked import IncrementMaskModule
+from incr_modules.mask_incr_modules import IncrementMaskModule
 from ._C_ext.pointops.pointops_ext import conv3x3_increment_ext, conv5x5_increment_ext, conv1x1_increment_ext
 from .pointops_functional import activation_incr
 

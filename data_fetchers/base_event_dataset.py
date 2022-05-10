@@ -35,7 +35,7 @@ class EventDataset(Dataset):
         assert(np.alltrue(np.diff(self.stamps) > 0)), "timestamps are not unique and monotonically increasing"
 
         self.initial_stamp = self.stamps[0]
-        self.stamps = self.stamps - self.initial_stamp  # offset the timestamps so they start at 0
+        self.stamps = self.stamps - self.stamps[0]  # offset the timestamps so they start at 0
 
         # Find the index of the first event tensor whose timestamp >= start_time
         # If there is none, throw an error

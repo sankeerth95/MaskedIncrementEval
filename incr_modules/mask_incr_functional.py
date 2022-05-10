@@ -32,7 +32,7 @@ class IncrementReserve:
 
     # dense/sparse accumulate accumulate
     def accumulate(self, incr: Masked):
-        self.reservoir.add_(incr)
+        self.reservoir.add_(incr[0])
         # return
         # with torch.cuda.stream(self.accum_stream.get_stream()):
         #     self.reservoir.add_(incr)
@@ -51,13 +51,14 @@ def conv2d_from_module(x: Masked, conv_weights, stride=(1,1), padding=(1, 1)) ->
 
 
 def transposed_conv2d_from_module(x: Masked, gates: nn.ConvTranspose2d, bias=True) -> Masked:
-    gate_bias = gates.bias if bias else None
-    return F.conv_transpose2d(x, gates.weight, bias=gate_bias, stride=gates.stride, \
+    return F.conv_transpose2d(x[0], gates.weight, bias=None, stride=gates.stride, \
             padding=gates.padding, output_padding=gates.output_padding, dilation=gates.dilation, groups=gates.groups)
 
 
 def bn2d_from_module(x: Masked, bnm: nn.BatchNorm2d) -> Masked:
-    out1 = F.batch_norm(x, running_mean=bnm.running_mean, running_var=bnm.running_var, weight=bnm.weight, training=False, momentum=bnm.momentum, eps=bnm.eps)
+
+    # out1 = F.batch_norm(x[0], running_mean=torch.zeros_like(bnm.running_mean), running_var=bnm.running_var, weight=bnm.weight, training=False, momentum=bnm.momentum, eps=bnm.eps)
+    out1 = x[0]
     return out1, torch.ones_like(out1, dtype=bool)
 
 

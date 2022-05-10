@@ -26,9 +26,7 @@ def first_element_greater_than(values, req_value):
     Returns (-1, None) if there is no such i.
     Note: this function assumes that values is a sorted array!"""
     i = np.searchsorted(values, req_value)
-    if abs(values[i] - req_value) > 0.01:
-        # for mvsec, depth timestamps aren't always bigger than the event timestamps. This can lead to choosing a
-        # value that that is too large, which is fixed here.
+    if i >= len(values) or abs(values[i] - req_value) > 0.01:
         i = i - 1
     val = values[i] if i < len(values) else None
     return (i, val)
@@ -59,6 +57,22 @@ def closest_element_to(values, req_value):
 
     diff = fabs(val - req_value)
     return (idx, val, diff)
+
+
+def event_histogram(events, W, H):
+    t, x, y, p = events.T
+    x = x.astype(np.int)
+    y = y.astype(np.int)
+
+    img_pos = np.zeros((H * W,), dtype="float32")
+    img_neg = np.zeros((H * W,), dtype="float32")
+
+    np.add.at(img_pos, x[p == 1] + W * y[p == 1], 1)
+    np.add.at(img_neg, x[p == -1] + W * y[p == -1], 1)
+
+    histogram = np.stack([img_neg, img_pos], -1).reshape((H, W, 2))
+
+    return histogram    
 
 
 def events_to_voxel_grid_absT(events, num_bins, height, width, deltaT, startT):

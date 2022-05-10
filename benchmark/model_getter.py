@@ -1,4 +1,4 @@
-from incr_modules.fenced_module_masked import E2VIDRecurrentIncr
+from incr_modules.e2depth_incr import E2VIDRecurrentIncr
 from ev_projs.rpg_e2depth.model.model import E2VIDRecurrent
 
 import torch.nn as nn 

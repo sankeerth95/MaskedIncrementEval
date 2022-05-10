@@ -55,16 +55,14 @@ class DenseObjectDetIncr(nn.Module):
             )
 
 
-    def forward(self, x):
-        x = self.conv_layers(x)
-        x = torch.flatten(x, 1)
+    def forward(self, x_incr):
+        x = self.conv_layers(x_incr)
+        x = torch.flatten(x[0], 1)
         # x = x.view(-1, self.linear_input_features)
         x = self.linear_1(x)
         x = self.relu1(x)
         x = self.linear_2(x)
-        x = x.view([-1] + self.cnn_spatial_output_size + [(self.nr_classes + 5*self.nr_box)])
-        return x
-
+        return x[0].view([-1] + self.cnn_spatial_output_size + [(self.nr_classes + 5*self.nr_box)]), x[1]
 
     def forward_refresh_reservoirs(self, x_incr):
         x_incr = self.conv_layers.forward_refresh_reservoirs(x_incr)

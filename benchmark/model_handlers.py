@@ -1,6 +1,6 @@
 from abc import abstractmethod
 import torch.nn as nn
-from incr_modules.fenced_module_masked import IncrementMaskModule
+from incr_modules.mask_incr_modules import IncrementMaskModule
 
 # solid design principles:
 #

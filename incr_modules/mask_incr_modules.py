@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from .masked_types import Masked, DenseT
 
 
-from .mask_incr_functional import IncrPointwiseMultiply, IncrementReserve
+from .mask_incr_functional import IncrPointwiseMultiply, IncrementReserve, bn2d_from_module, conv2d_from_module
 
 
 
@@ -84,6 +84,7 @@ class NonlinearPointOpIncr(IncrementMaskModule):
 
     # need to be replaced with c++ binding
     def _nonlin(self, x_incr: Masked):
+        self.reservoir_in.reservoir + x_incr[0]
         output_incr = self.op(self.reservoir_in.reservoir + x_incr[0]) - self.op(self.reservoir_in.reservoir)
         return [output_incr, x_incr[1]]
 
@@ -92,7 +93,8 @@ class nnLinearIncr(nn.Linear):
     
     # fully connected implementation
     def forward(self, x_incr: Masked) -> Masked:
-        return [F.linear(x_incr[0], self.weight, bias=None), True|x_incr[1]]
+        out = F.linear(x_incr[0], self.weight, bias=None)
+        return out, torch.ones_like(out, dtype=bool)
 
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
         return super().forward(x)
@@ -104,7 +106,10 @@ class nnLinearIncr(nn.Linear):
 class nnConvIncr(nn.Conv2d):
 
     def forward(self, x_incr):
-        raise NotImplementedError
+        # print('x_incr: ', x_incr.shape)
+        out = F.conv2d(x_incr[0], self.weight, bias=None, padding=self.padding, stride=self.stride)
+        return out, torch.ones_like(out, dtype=bool)
+        return conv2d_from_module(x_incr, self.weight)
 
 
     def forward_refresh_reservoirs(self, x):
@@ -114,7 +119,7 @@ class nnConvIncr(nn.Conv2d):
 class nnBatchNorm2dIncr(nn.BatchNorm2d):
 
     def forward(self, x_incr):
-        raise NotImplementedError
+        return bn2d_from_module(x_incr, self)
 
 
     def forward_refresh_reservoirs(self, x):
@@ -123,13 +128,19 @@ class nnBatchNorm2dIncr(nn.BatchNorm2d):
 
 class nnMaxPool2dIncr(nn.MaxPool2d):
 
-    def forward(self, x_incr):
-        raise NotImplementedError
+    def __init__(self, kernel_size, stride=None, padding=0):
+        nn.MaxPool2d.__init__(self, kernel_size=kernel_size, stride=stride, padding=padding)
+        self.functional = lambda x: F.max_pool2d(x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding)
+        self.mp_res = IncrementReserve()
 
+    def forward(self, x_incr):
+        out = self.functional(self.mp_res.reservoir+x_incr[0]) - self.functional(self.mp_res.reservoir)
+        self.mp_res.accumulate(x_incr)
+        return out
 
     def forward_refresh_reservoirs(self, x):
+        self.mp_res.update_reservoir(x)
         return super().forward(x)
-
 
 
 #linear module
@@ -155,8 +166,8 @@ class nnReluIncr(NonlinearPointOpIncr):
         self.in_res = IncrementReserve() 
         NonlinearPointOpIncr.__init__(self, self.in_res, torch.relu)
 
-    def forward(self, x_incr):
-        out = super().forward(x_incr)
+    def forward(self, x_incr: Masked):
+        out = NonlinearPointOpIncr.forward(self, x_incr)
         self.in_res.accumulate(x_incr)
         return out
 
