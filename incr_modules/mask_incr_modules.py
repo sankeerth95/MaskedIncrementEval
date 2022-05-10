@@ -10,11 +10,6 @@ from .mask_incr_functional import IncrPointwiseMultiply, IncrementReserve, bn2d_
 
 # input output increments: interface for incremental modules! 
 class IncrementMaskModule(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x: Masked) -> Masked: 
-        raise NotImplementedError
 
     # called at the end of non-increment forward pass, if needed.
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT: 
@@ -37,7 +32,7 @@ class KFencedMaskModule(IncrementMaskModule):
 
     # accumulate operations: sparsed
     def forward(self, incr: Masked) -> Masked:
-        return incr, None
+        return incr
         T1 = self.delta.reservoir + incr                    # critical path; could be sparse
         f_delta = self.floor_by_k(T1)                   # critical path; could be sparse
         self.delta.update_reservoir(T1 - f_delta)                       # out of order; sparse
@@ -174,7 +169,7 @@ class nnMaxPool2dIncr(nn.MaxPool2d):
 #linear module
 class nnAdaptiveAvgPool2dIncr(nn.AdaptiveAvgPool2d):
     def forward(self, x_incr):
-        return [nn.AdaptiveAvgPool2d.forward(self, x_incr[0]), None]
+        return nn.AdaptiveAvgPool2d.forward(self, x_incr[0]), None
 
     def forward_refresh_reservoirs(self, x):
         return super().forward(x)

@@ -44,7 +44,8 @@ class IncrementReserve:
 
 
 def IncrPointwiseMultiply(x1_incr: Masked, x1: IncrementReserve, x2_incr: Masked, x2: IncrementReserve) -> Masked:
-    return [x1_incr[0]*x2_incr[0] + x2.reservoir*x1_incr[0] + x1.reservoir*x2_incr[0], x1_incr[1]|x2_incr[1]]
+    return [x1_incr[0]*x2_incr[0] + x2.reservoir*x1_incr[0] + x1.reservoir*x2_incr[0], None]
+    # return [x1_incr[0]*x2_incr[0] + x2.reservoir*x1_incr[0] + x1.reservoir*x2_incr[0], x1_incr[1]|x2_incr[1]]
 
 
 def conv2d_from_module(x: Masked, conv_weights, stride=(1,1), padding=(1, 1)) -> Masked:

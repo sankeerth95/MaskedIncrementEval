@@ -82,8 +82,8 @@ class ConvLSTMIncr(nn.Module):
     def forward(self, input_incr: Masked, prev_state_incr: Masked):
 
         # get batch and spatial sizes
-        batch_size = input_incr.data.size()[0]
-        spatial_size = input_incr.data.size()[2:]
+        batch_size = input_incr[0].data.size()[0]
+        spatial_size = input_incr[0].data.size()[2:]
 
         # generate empty prev_state, if None is provided
         if prev_state_incr is None:
@@ -92,35 +92,36 @@ class ConvLSTMIncr(nn.Module):
             if state_size not in self.zero_tensors_incr:
                 # allocate a tensor with size `spatial_size`, filled with zero (if it has not been allocated already)
                 self.zero_tensors_incr[state_size] = (
-                    torch.zeros(state_size, device=input_incr.device).to(memory_format=torch.channels_last),
-                    torch.zeros(state_size, device=input_incr.device).to(memory_format=torch.channels_last)
+                    (torch.zeros(state_size, device=input_incr[0].device).to(memory_format=torch.channels_last), None),
+                    (torch.zeros(state_size, device=input_incr[0].device).to(memory_format=torch.channels_last), None)
                 )
 
             prev_state_incr = self.zero_tensors_incr[state_size]
 
         prev_h_incr, prev_c_incr = prev_state_incr
 
-        stacked_inputs_incr = torch.cat((input_incr, prev_h_incr), 1)
+        stacked_inputs_incr = torch.cat((input_incr[0], prev_h_incr[0]), 1), None
         gates_incr = self.Gates(stacked_inputs_incr)
         gates_incr = self.kf(gates_incr)
-        in_incr, rm_incr, o_incr, cg_incr = gates_incr.chunk(4, 1)
+
+        in_gate, remember_gate, out_gate, cell_gate = gates_incr[0].chunk(4, 1)
 
         # set of pointwise nonlinear operations: output is guaranteed to be sparse
-        rm_s_incr = self.rm_sigmoid(rm_incr)
-        in_s_incr = self.in_sigmoid(in_incr)
-        cg_th_incr = self.cg_tanh(cg_incr)
-        o_s_incr = self.o_sigmoid(o_incr)  
+        in_gate = self.sigmoid1([in_gate, None])
+        remember_gate = self.sigmoid2([remember_gate, None])
+        out_gate = self.sigmoid3([out_gate, None])
 
-        # this output is not guaranteed to be sparse :(
-        c_incr = self.in_s_cg_th_mult(in_s_incr, cg_th_incr) + self.prev_c_rm_s_mult(rm_s_incr, prev_c_incr)
-#        cell_incr = (remember_gate_incr * prev_cell_incr) + (in_gate_incr * cell_gate_incr)
+        # apply tanh non linearity
+        cell_gate = self.tanh1([cell_gate, None])
+
+        cell = self.m1(in_gate, cell_gate) + self.m2(remember_gate, prev_c_incr)
 
         # nonlinear operation: incrmenet as well as a 
-        c_th_incr = self.c_tanh(c_incr)
-        h_incr = self.o_s_c_th_rm_mult(o_s_incr, c_th_incr)    
+        cell_tanh = self.tanh2(cell)
+        hidden = self.m3(out_gate, cell_tanh)    
 #        hidden_incr = out_gate_incr * self.cell_incr_tanh(cell_incr)
 
-        return h_incr, c_incr
+        return hidden, cell
 
 
     # update all reservoirs in the meanwhile
@@ -214,13 +215,10 @@ class ResidualBlockIncr(nn.Module):
         residual_incr = x_incr
         out_incr = self.conv1(x_incr)
         out_incr = self.kf1(out_incr)
-
         if self.norm in ['BN', 'IN']:
             out_incr = self.bn1(out_incr)
-
-        out_incr_relu = self.relu1(out_incr)
-
-        out_incr = self.conv2(out_incr_relu)
+        out_incr = self.relu1(out_incr)
+        out_incr = self.conv2(out_incr)
         out_incr = self.kf2(out_incr)
         if self.norm in ['BN', 'IN']:
             out_incr = self.bn2(out_incr)
@@ -228,7 +226,7 @@ class ResidualBlockIncr(nn.Module):
         if self.downsample:
             residual_incr = self.downsample(x_incr) # TODO: check if this is linear
 
-        out_incr[0] += residual_incr[0] # todo : check accumulation mask of doing this way
+        out_incr = (out_incr[0] + residual_incr[0], None) # todo : check accumulation mask of doing this way
         out_incr = self.relu2(out_incr)
 
         return out_incr

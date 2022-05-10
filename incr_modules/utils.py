@@ -4,6 +4,7 @@ from metrics.structural_sparsity import field_channel_sparsity
 
 
 def print_sparsity(x, prefix: str = ""):
+    return
     print(prefix, float(field_channel_sparsity(x, field_size=5, threshold=0.0001).cpu().numpy())  )
 
 

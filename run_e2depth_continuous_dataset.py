@@ -12,7 +12,7 @@ from ev_projs.rpg_e2depth.options.inference_options import set_depth_inference_o
 
 if __name__ == '__main__':
     device='cuda'
-    visualize=True
+    visualize=False
 
 
     width, height = 346, 260
@@ -48,11 +48,18 @@ if __name__ == '__main__':
             pad(event_preprocessor(torch.Tensor(dataset[i]))),
             dim=0).to(device)#, memory_format=memory_format)
 
-        for i in range(1):
+        for i in range(5):
             event_tensor = get_data_i(i)
-            # c,h = model.forward_refresh_reservoirs(event_tensor, None)
-            c,h = model(event_tensor, None)
-        print(h)
+
+            if i % 20 == 0:
+                c,h = model.forward_refresh_reservoirs(event_tensor, None)
+                event_tensor_prev = event_tensor
+            else:
+                c_incr, h_incr = model((event_tensor - event_tensor_prev, None), None)
+                event_tensor_prev = event_tensor
+                c += c_incr[0]
+
+        print(c)
 
 
 
