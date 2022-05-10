@@ -133,12 +133,12 @@ class nnMaxPool2dIncr(nn.MaxPool2d):
         self.functional = lambda x: F.max_pool2d(x, kernel_size=self.kernel_size, stride=self.stride, padding=self.padding)
         self.mp_res = IncrementReserve()
 
-    def forward(self, x_incr):
+    def forward(self, x_incr: Masked) -> Masked:
         out = self.functional(self.mp_res.reservoir+x_incr[0]) - self.functional(self.mp_res.reservoir)
         self.mp_res.accumulate(x_incr)
-        return out
+        return out, None
 
-    def forward_refresh_reservoirs(self, x):
+    def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
         self.mp_res.update_reservoir(x)
         return super().forward(x)
 

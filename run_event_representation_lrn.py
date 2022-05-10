@@ -3,7 +3,8 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from data_fetchers.continuous_event_datasets import ContinuousEventsDataset
-from ev_projs.rpg_async.dataloader.dataset import NCaltech101_ObjectDetection
+
+
 from ev_projs.rpg_event_representation_learning.utils.dataset import NCaltech101
 from ev_projs.rpg_event_representation_learning.utils.loader import Loader
 from incr_modules.event_representation_incr import ClassifierIncrEval
@@ -27,13 +28,6 @@ if __name__ == '__main__':
         dataset_path = '/home/sankeerth/ev/rpg_event_representation_learning/N-Caltech101/testing/'
         dataset = NCaltech101(
             dataset_path, 
-            'all', 
-            height, 
-            width, 
-            25000, 
-            mode='validation', 
-            event_representation='histogram', 
-            shuffle=False
         )
 
     test_loader = DataLoader(dataset)
@@ -56,21 +50,32 @@ if __name__ == '__main__':
 
         for i_batch, sample in tqdm(test_loader):
             events, labels = sample
+
+            vox = model.quantization_layer.forward(events)
+            vox_cropped = model.crop_and_resize_to_resolution(vox, model.crop_dimension)
+
             with torch.no_grad():
                 if i_batch%1 == 0:
                     with record_function("model_inference_base"):
-                        pred_labels, _ = model.forward_refresh_reservoir(events)
-        
+                        pred_labels, _ = model.classifier.forward_refresh_reservoir(vox_cropped)
+                        vox_cropped_prev = vox_cropped
                 else:
-                    with record_function("model_inference_base"):
-                        out, mask = model(events)
-                        model_out += out
-        
+                    with record_function("model_inference"):
+                        out, mask = model.classifier(vox_cropped - vox_cropped)
+                        pred_labels += out
+                        vox_cropped_prev = vox_cropped        
                     # loss, accuracy = cross_entropy_loss_and_accuracy(pred_labels, labels)
-
 
             # sum_accuracy += accuracy
             # sum_loss += loss
+
+            if i_batch == 20:
+                break
+
+
+    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=30))
+
+    print(f"Test Loss: {sum_loss}")
 
     # test_loss = sum_loss.item() / len(test_loader)
     # test_accuracy = sum_accuracy.item() / len(test_loader)

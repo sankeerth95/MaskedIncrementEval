@@ -2,23 +2,24 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import ext.pointops.pointops_functional as pf
-from .masked_types import Masked
+from .masked_types import DenseT, Masked
 
 
 # singleton class; not the best way but whatev
 class AccumStreamManager:
-    def __init__(self):
-        self.s = torch.cuda.Stream()
-    
-    def get_stream(self):
-        return self.s
-
     instance = None
     @classmethod
     def createAccumStream(cls):
         if cls.instance is None:
             cls.instance = cls()
         return cls.instance
+
+    def __init__(self):
+        self.s = torch.cuda.Stream()
+    
+    def get_stream(self):
+        return self.s
+
 
 
 # accumulates inputs: have to make this conditional
@@ -37,7 +38,7 @@ class IncrementReserve:
         # with torch.cuda.stream(self.accum_stream.get_stream()):
         #     self.reservoir.add_(incr)
 
-    def update_reservoir(self, x: torch.Tensor):
+    def update_reservoir(self, x: DenseT):
         self.reservoir = x.clone().detach() # not in place right now :(
 
 
@@ -56,17 +57,15 @@ def transposed_conv2d_from_module(x: Masked, gates: nn.ConvTranspose2d, bias=Tru
 
 
 def bn2d_from_module(x: Masked, bnm: nn.BatchNorm2d) -> Masked:
-
-    # out1 = F.batch_norm(x[0], running_mean=torch.zeros_like(bnm.running_mean), running_var=bnm.running_var, weight=bnm.weight, training=False, momentum=bnm.momentum, eps=bnm.eps)
-    out1 = x[0]
+    # out1 = x[0]
+    out1 = F.batch_norm(x[0], running_mean=torch.zeros_like(bnm.running_mean), \
+        running_var=bnm.running_var, weight=bnm.weight, training=False, momentum=bnm.momentum, eps=bnm.eps)
     return out1, torch.ones_like(out1, dtype=bool)
-
 
 
 def interpolate_from_module(x: Masked) -> Masked:
     out1 = F.interpolate(x[0], scale_factor=2, mode='bilinear', align_corners=False)
     return out1, torch.ones_like(out1, dtype=bool)
-
 
 
 

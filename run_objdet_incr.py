@@ -69,13 +69,13 @@ if __name__ == '__main__':
                                             / height).long()
 
             with torch.no_grad():
-                if i_batch%1 == 0:
+                if i_batch%20 == 0:
                     with record_function("model_inference_base"):
                         model_output = model.forward_refresh_reservoirs(histogram)
                         histogram_prev = histogram
                 else:
                     with record_function("model_inference"):
-                        out, mask = model(histogram - histogram_prev)
+                        out, mask = model((histogram - histogram_prev, None))
                         model_output += out
                         histogram_prev = histogram
 
@@ -94,7 +94,7 @@ if __name__ == '__main__':
 
 
 
-    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=30))
+    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=10))
 
 
     print(f"Test Loss: {sum_loss}")

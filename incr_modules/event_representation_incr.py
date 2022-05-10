@@ -162,11 +162,9 @@ class ClassifierIncrEval(nn.Module):
         self.classifier.fc = nnLinearIncr(self.classifier.fc.in_features, num_classes)
 
 
-    def forward(self, x):
-        vox = self.quantization_layer.forward(x)
-        vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
-        pred = self.classifier(vox_cropped - prev)
-        return pred, vox
+    def forward(self, x_incr):
+        pred = self.classifier(x_incr)
+        return pred
 
 
     def crop_and_resize_to_resolution(self, x, output_resolution=(224, 224)):
@@ -183,10 +181,8 @@ class ClassifierIncrEval(nn.Module):
         return x
 
     def forward_refresh_reservoir(self, x):
-        vox = self.quantization_layer.forward(x)
-        vox_cropped = self.crop_and_resize_to_resolution(vox, self.crop_dimension)
-        pred = self.classifier.forward_refresh_reservoirs(vox_cropped)
-        return pred, vox
+        pred = self.classifier.forward_refresh_reservoirs(x)
+        return pred
 
 
 
