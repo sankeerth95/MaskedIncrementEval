@@ -43,15 +43,18 @@ if __name__ == '__main__':
     lp = '/home/sankeerth/ev/rpg_asynet/log/20220508-215001/checkpoints/model_step_49.pth'
     m = torch.load(lp)
     model.load_state_dict(m['state_dict'])
-    model = model.to(device)
-    model.eval()
+    model = model.to(device).eval()
+
     model_input_size = torch.tensor([191, 255])
     sum_accuracy = 0
     sum_loss = 0
-
     with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
 
         for i_batch, sample_batched in enumerate(val_loader):
+
+            if i_batch == 20:
+                break
+
 
             event, bounding_box, histogram = sample_batched
 
@@ -69,13 +72,16 @@ if __name__ == '__main__':
                                             / height).long()
 
             with torch.no_grad():
-                if i_batch%20 == 0:
+                if i_batch%1 == 0:
+                    print(torch.count_nonzero(histogram))
                     with record_function("model_inference_base"):
                         model_output = model.forward_refresh_reservoirs(histogram)
                         histogram_prev = histogram
                 else:
+                    x = histogram-histogram_prev
+                    print(torch.count_nonzero(x))
                     with record_function("model_inference"):
-                        out, mask = model((histogram - histogram_prev, None))
+                        out, mask = model((x, None))
                         model_output += out
                         histogram_prev = histogram
 
@@ -89,14 +95,9 @@ if __name__ == '__main__':
 
             # sum_loss += loss
 
-            if i_batch == 20:
-                break
 
-
-
-    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=10))
-
-
+    # print(model_output)
+    # print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=10))
     print(f"Test Loss: {sum_loss}")
 
         # show_tensor_image()

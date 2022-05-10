@@ -71,7 +71,6 @@ class DenseObjectDetIncr(nn.Module):
         x_incr = self.relu1.forward_refresh_reservoirs(x_incr)
         x_incr = self.linear_2.forward_refresh_reservoirs(x_incr)
         x_incr = x_incr.view([-1] + self.cnn_spatial_output_size + [(self.nr_classes + 5*self.nr_box)])
-
         return x_incr
 
 

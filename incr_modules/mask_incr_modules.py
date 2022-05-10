@@ -1,3 +1,4 @@
+from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,7 +6,6 @@ from .masked_types import Masked, DenseT
 
 
 from .mask_incr_functional import IncrPointwiseMultiply, IncrementReserve, bn2d_from_module, conv2d_from_module
-
 
 
 # input output increments: interface for incremental modules! 
@@ -37,7 +37,7 @@ class KFencedMaskModule(IncrementMaskModule):
 
     # accumulate operations: sparsed
     def forward(self, incr: Masked) -> Masked:
-        return incr
+        return incr, None
         T1 = self.delta.reservoir + incr                    # critical path; could be sparse
         f_delta = self.floor_by_k(T1)                   # critical path; could be sparse
         self.delta.update_reservoir(T1 - f_delta)                       # out of order; sparse
@@ -64,6 +64,23 @@ class PointwiseMultiplyIncr(IncrementMaskModule):
 
     def forward_refresh_reservoirs(self, x1: DenseT, x2: DenseT) -> DenseT:
         return x1*x2
+
+
+class nnReservedMultiplication(PointwiseMultiplyIncr):
+    def __init__(self):
+        super().__init__(IncrementReserve(), IncrementReserve())
+
+    def forward(self, x1_incr: Masked, x2_incr: Masked) -> Masked:
+        out_incr = PointwiseMultiplyIncr.forward(self, x1_incr, x2_incr)
+        self.x1_res.accumulate(x1_incr)
+        self.x2_res.accumulate(x2_incr)
+        return out_incr
+
+    def forward_refresh_reservoirs(self, x1: DenseT, x2: DenseT) -> DenseT:
+        out = PointwiseMultiplyIncr.forward_refresh_reservoirs(self, x1, x2)
+        self.x1_res.update_reservoir(x1)
+        self.x2_res.update_reservoir(x2)        
+        return out
 
 
 
@@ -105,15 +122,26 @@ class nnLinearIncr(nn.Linear):
 #linear module
 class nnConvIncr(nn.Conv2d):
 
+    # def __init__(self,
+    #              in_channels: int,
+    #              out_channels: int,
+    #              kernel_size: Tuple[int, ...],
+    #              stride: Tuple[int, ...]=1,
+    #              padding: Tuple[int, ...]=0,
+    #              bias=None):
+    #     nn.Conv2d.__init__(self, in_channels, out_channels, kernel_size, stride, padding, bias)
+        # self.conv2d_weights = pf.convert_filter_out_channels_last(self.conv2d.weight).cuda()
+
+
     def forward(self, x_incr):
         # print('x_incr: ', x_incr.shape)
         out = F.conv2d(x_incr[0], self.weight, bias=None, padding=self.padding, stride=self.stride)
         return out, torch.ones_like(out, dtype=bool)
-        return conv2d_from_module(x_incr, self.weight)
-
+        return conv2d_from_module(x_incr, self.conv2d_weights)
 
     def forward_refresh_reservoirs(self, x):
         return super().forward(x)
+
 
 #linear module
 class nnBatchNorm2dIncr(nn.BatchNorm2d):
@@ -145,26 +173,26 @@ class nnMaxPool2dIncr(nn.MaxPool2d):
 
 #linear module
 class nnAdaptiveAvgPool2dIncr(nn.AdaptiveAvgPool2d):
-
     def forward(self, x_incr):
-        raise NotImplementedError
+        return [nn.AdaptiveAvgPool2d.forward(self, x_incr[0]), None]
 
     def forward_refresh_reservoirs(self, x):
         return super().forward(x)
 
 
 class nnSequentialIncr(nn.Sequential):
-
     def forward_refresh_reservoirs(self, x):
         for module in self:
             x = module.forward_refresh_reservoirs(x)
         return x
 
 
-class nnReluIncr(NonlinearPointOpIncr):
-    def __init__(self):
+
+
+class nnReservedActivation(NonlinearPointOpIncr):
+    def __init__(self, op=torch.relu):
         self.in_res = IncrementReserve() 
-        NonlinearPointOpIncr.__init__(self, self.in_res, torch.relu)
+        NonlinearPointOpIncr.__init__(self, self.in_res, op)
 
     def forward(self, x_incr: Masked):
         out = NonlinearPointOpIncr.forward(self, x_incr)
@@ -172,7 +200,21 @@ class nnReluIncr(NonlinearPointOpIncr):
         return out
 
     def forward_refresh_reservoirs(self, x: DenseT):
-        out = super().forward_refresh_reservoirs(x)
+        out = NonlinearPointOpIncr.forward_refresh_reservoirs(self, x)
         self.in_res.update_reservoir(x)
         return out
+
+
+class nnReluIncr(nnReservedActivation):
+    def __init__(self):
+        nnReservedActivation.__init__(self, torch.relu)
+
+class nnSigmoidIncr(nnReservedActivation):
+    def __init__(self):
+        nnReservedActivation.__init__(self, torch.sigmoid)
+
+class nnTanhIncr(nnReservedActivation):
+    def __init__(self):
+        nnReservedActivation.__init__(self, torch.tanh)
+
 

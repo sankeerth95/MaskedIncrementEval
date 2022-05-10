@@ -45,7 +45,8 @@ class BasicBlockIncr(nn.Module):
         if self.downsample:
             identity = self.downsample(x_incr)
 
-        res_in2_input = out + identity
+        res_in2_input = (out[0] + identity[0], None)
+
         ret = self.relu2(res_in2_input)
 
         self.res_in.accumulate(in_activation)
@@ -108,7 +109,7 @@ class ResnetIncr(nn.Module):
         out = self.layer4(out)
 
         out = self.avgpool(out)
-        out = torch.flatten(out, 1, -1)
+        out = torch.flatten(out[0], 1, -1), None
         out = self.fc(out)
 
         self.in_res.accumulate(in_activation)

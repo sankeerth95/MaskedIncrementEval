@@ -33,7 +33,7 @@ class VoxelGridDataset(EventDataset):
             random.seed(transform_seed)
             events = self.transform(events)
 
-        return {'events': events}  # [num_bins x H x W] tensor
+        return events  # [num_bins x H x W] tensor
 
 
 
