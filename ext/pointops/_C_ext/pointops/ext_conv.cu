@@ -4,16 +4,16 @@
 #include "checks.h"
 
 
-// compete with this impelemntation
+// compete with this implemntation
 template<int KERNEL_SIZE=3, int STRIDE, int pixelsPerBlockX, int pixelsPerBlockY, int OUT_CHANNELS_PER_BLOCK>
-__device__ __forceinline__ void calc_tile_indices(
+__device__ __forceinline__ void calc_tile_indices( 
     int& tile_start_out_y, int& tile_start_out_x, int& tile_start_in_y, int& tile_start_in_x, int& tile_start_z, int& batch, const int out_C) {
 
     constexpr int PAD_LENGTH = (KERNEL_SIZE-1)/2;
     tile_start_out_y = blockIdx.y * pixelsPerBlockY;
     tile_start_out_x = blockIdx.x * pixelsPerBlockX;
-    tile_start_in_y = tile_start_out_y*STRIDE  - PAD_LENGTH;
-    tile_start_in_x = tile_start_out_x*STRIDE  - PAD_LENGTH;
+    tile_start_in_y = tile_start_out_y*STRIDE - PAD_LENGTH;
+    tile_start_in_x = tile_start_out_x*STRIDE - PAD_LENGTH;
 
     const int blocksPerBatch = divup(out_C, OUT_CHANNELS_PER_BLOCK);
     tile_start_z = (blockIdx.z % blocksPerBatch) * OUT_CHANNELS_PER_BLOCK;
@@ -67,7 +67,7 @@ __device__ void gather_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar
 
 template<typename scalar_t=float, int KERNEL_SIZE=3, int STRIDE=1, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6>
 __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scalar_t const dense_s_in[][WARP_SIZE], 
-                            int out_c, int out_C, int in_c, int in_C ,int h_in, int w_in){
+                            int out_c, int out_C, int in_c_lane, int in_C ,int h_in, int w_in){
 
     scalar_t t_f[KERNEL_SIZE*KERNEL_SIZE];
     constexpr int PAD_LENGTH = (KERNEL_SIZE-1)/2;
@@ -75,19 +75,18 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
     #pragma unroll
     for(int f_y = 0; f_y < KERNEL_SIZE; ++f_y) {
         #pragma unroll
-        for(int f_x = 0; f_x < KERNEL_SIZE; ++f_x) { 
+        for(int f_x = 0; f_x < KERNEL_SIZE; ++f_x) {
             t_f[f_y*KERNEL_SIZE + f_x] = in_c_filter[((KERNEL_SIZE-1-f_y)*KERNEL_SIZE + KERNEL_SIZE-1-f_x) * out_C];
             // t_f[f_y*KERNEL_SIZE + f_x] = in_c_filter[(f_y*KERNEL_SIZE + f_x) * out_C];
         }
     }
-
 
     #pragma unroll
     for (int in_y = -PAD_LENGTH; in_y < h_in -PAD_LENGTH; ++in_y) {
         #pragma unroll
         for (int in_x = -PAD_LENGTH; in_x < w_in -PAD_LENGTH; ++in_x) {
 
-            scalar_t const val = dense_s_in[(in_y + PAD_LENGTH) * w_in + in_x + PAD_LENGTH][in_c];
+            scalar_t const val = dense_s_in[(in_y+PAD_LENGTH)*w_in + in_x+PAD_LENGTH][in_c_lane];
 
             int const min_f_y = - in_y;
             int const min_f_x = - in_x;
@@ -101,13 +100,12 @@ __device__ void scatter_conv(scalar_t const *in_c_filter, scalar_t *t_out, scala
                 #pragma unroll
                 for (int f_x = Utils::constexpr_max(-PAD_LENGTH + stride_off_x, min_f_x); f_x <= Utils::constexpr_min(PAD_LENGTH, max_f_x); f_x += STRIDE) {
                     t_out[((in_y+f_y)/STRIDE) * pixelsPerBlockX + (in_x+f_x)/STRIDE] += val * t_f[(f_y+PAD_LENGTH)*KERNEL_SIZE + f_x + PAD_LENGTH ]; 
+                    // t_out[((in_y+f_y)/STRIDE) * pixelsPerBlockX + (in_x+f_x)/STRIDE] += val * t_f[(f_y+PAD_LENGTH)*KERNEL_SIZE + f_x + PAD_LENGTH ]; 
                 }
             }
         }
     }
 }
-
-
 
 
 template<typename scalar_t=float, int KERNEL_SIZE=3, int STRIDE=1, int WARP_SIZE=32, int pixelsPerBlockX=6, int pixelsPerBlockY=6, int OUT_CHANNELS_PER_BLOCK=256, int BLOCK_SIZE=OUT_CHANNELS_PER_BLOCK>
@@ -124,9 +122,8 @@ __global__ void conv_kxk_ext(
     // true for full depth
     int tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch;
     calc_tile_indices<KERNEL_SIZE, STRIDE, pixelsPerBlockX, pixelsPerBlockY, OUT_CHANNELS_PER_BLOCK>(
-        tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch, out_C
-    );
-    // printf("batchsize = %d\n", batch);
+        tile_start_out_y, tile_start_out_x, tile_start_in_y, tile_start_in_x, tile_start_z, batch, out_C);
+
     scalar_t* batch_out = output + (batch * out_H * out_W * out_C);
     const scalar_t* batch_in = input + (batch * in_H * in_W * in_C);
 
@@ -135,22 +132,21 @@ __global__ void conv_kxk_ext(
 
     const int n_in_px_aligned = divup(w_in * h_in, 4) * 4;
 
-
     const int lane_idx = threadIdx.x % WARP_SIZE;
     const int warp_idx = threadIdx.x / WARP_SIZE;
     const int n_warps = BLOCK_SIZE / WARP_SIZE;
 
-
     union SMEM {
         // SparseSMEM sparse;
-        // bool mask_s_in[WARP_SIZE]; //bitwise operations wover WARP_SIZE: implement later
+        // bool mask_s_in[WARP_SIZE]; //bitwise operations over WARP_SIZE: implement later
         scalar_t dense_s_in[n_in_px_aligned][WARP_SIZE];
     };
     __shared__ SMEM smem;
 
     // TODO fix dilation and striding for sparse version
     for (int out_c_off = tile_start_z; out_c_off < tile_start_z + OUT_CHANNELS_PER_BLOCK; out_c_off += BLOCK_SIZE) {
-        const int out_c = out_c_off + threadIdx.x; // parallelization across channels
+
+        const int out_c = out_c_off + threadIdx.x;
         scalar_t t_out[pixelsPerBlockX * pixelsPerBlockY];
         #pragma unroll
         for (int i = 0; i < pixelsPerBlockX * pixelsPerBlockY; ++i) {
@@ -161,27 +157,27 @@ __global__ void conv_kxk_ext(
 
             __syncthreads();
             int const in_c = in_c_off + lane_idx;
-            bool const valid_c = in_c < in_C && tile_start_in_y < out_H && tile_start_in_y >= 0 && tile_start_in_x < out_W && tile_start_in_x >= 0;
-            __shared__ bool mask_s_in[WARP_SIZE];
-            mask_s_in[lane_idx] = valid_c ? mask[tile_start_in_y * in_W * in_C + tile_start_in_x * in_C + in_c] : false;
+            bool const valid_c = in_c < in_C;// && tile_start_in_y < in_H && tile_start_in_y >= 0 && tile_start_in_x < in_W && tile_start_in_x >= 0;
+            // __shared__ bool mask_s_in[WARP_SIZE];
+            // mask_s_in[lane_idx] = valid_c ? mask[tile_start_in_y * in_W * in_C + tile_start_in_x * in_C + in_c] : false;
             for (int px_idx = warp_idx; px_idx < w_in * h_in; px_idx += n_warps) {
                 int const in_y = px_idx / w_in;
                 int const in_x = px_idx % w_in;
                 int const in_y_im = in_y + tile_start_in_y;
                 int const in_x_im = in_x + tile_start_in_x;
 
-                int const valid = valid_c && in_y_im < in_H && in_x_im < in_W;
+                int const valid = valid_c && in_y_im < in_H && in_x_im < in_W && in_y_im >= 0 && in_x_im >= 0;
                 if (valid) {
-                    smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_W * in_C + in_x_im * in_C + in_c];
+                    smem.dense_s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im*in_W*in_C + in_x_im*in_C + in_c];
                 } else {
                     smem.dense_s_in[in_y * w_in + in_x][lane_idx] = 0.0f;
                 }
             }
             __syncthreads();
 
-            for(int in_c = 0; in_c < WARP_SIZE && in_c + in_c_off < in_C; ++in_c) {
+            for(int in_c = 0; (in_c < WARP_SIZE) && (in_c + in_c_off < in_C); ++in_c) {
 
-                if (out_c < out_C && mask_s_in[in_c]) {
+                if (out_c < out_C /*&& mask_s_in[in_c]*/) {
 
                     scatter_conv<float, KERNEL_SIZE, STRIDE, WARP_SIZE, pixelsPerBlockX, pixelsPerBlockY>(
                         &filter[(in_c_off+in_c) * KERNEL_SIZE*KERNEL_SIZE * out_C + out_c], t_out, smem.dense_s_in, 
@@ -193,6 +189,8 @@ __global__ void conv_kxk_ext(
                 }
             }
         }
+
+
 
         if (out_c < out_C) {
             #pragma unroll
@@ -223,12 +221,12 @@ static void conv3x3_increment_cuda_ext(
     int const out_C = out_incr.sizes()[1], out_H=out_incr.sizes()[2], out_W=out_incr.sizes()[3];
     int const in_C = in_incr.sizes()[1], in_H=in_incr.sizes()[2], in_W=in_incr.sizes()[3];
 
-    int constexpr threads = 256;
+    int constexpr threads = 256;  //block size
     int const W_up = divup(out_W, W_OUT_PER_BLOCK);
     int const H_up = divup(out_H, H_OUT_PER_BLOCK);
     int const C_up = divup(out_C, threads);
     dim3 const blocks(W_up, H_up, C_up);
-    int constexpr out_channels_per_block = 32;
+    int constexpr out_channels_per_block = 256; // has to be less than or equal to threads!!!!!!!!!
     // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
     conv_kxk_ext<scalar_t, 3, STRIDE, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
         filter.data_ptr<scalar_t>(),
@@ -315,18 +313,18 @@ void convkxk_increment_ext_cuda_wrapper(
 ){
     if(k == 3){
         if(stride == 1 ){
-            conv3x3_increment_cuda_ext<float, 1, 32, 6, 6>(
+            conv3x3_increment_cuda_ext<float, 1, 32, 5, 5>(
                 in_incr,
                 mask,
                 filter,
-                out_incr  // expect a zero tensor
+                out_incr
             );
         } else if (stride == 2){
             conv3x3_increment_cuda_ext<float, 2, 32, 6, 6>(
                 in_incr,
                 mask,
                 filter,
-                out_incr  // expect a zero tensor
+                out_incr
             );
         } else{
             throw std::logic_error("not implemented stride size");
@@ -350,6 +348,7 @@ void convkxk_increment_ext_cuda_wrapper(
             throw std::logic_error("not implemented stride size");
         }
     } else if(k == 1 ) {
+        // stride, warp size, pX, pY
         conv1x1_increment_cuda_ext<float, 1, 32, 6, 6>(
             in_incr,
             mask,

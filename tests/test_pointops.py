@@ -4,6 +4,8 @@ import ext.pointops.pointops_modules as po
 import ext.pointops.pointops_functional as pf
 import unittest
 
+from incr_modules.mask_incr_modules import nnConvIncr
+
 class TestPointOps(unittest.TestCase):
 
     def test_accumulate_incr(self):
@@ -22,28 +24,15 @@ class TestPointOps(unittest.TestCase):
 
     def test_convkxkincr_functional(self):
 
-        in_shape = (1, 128, 132, 176)
-        x = torch.randn(in_shape, device='cuda').to(memory_format=torch.channels_last)
-        w = torch.randn((256, 128, 3, 3), device='cuda')
-        w1 = pf.convert_filter_out_channels_last(w)
-        out = pf.functional_conv_module(x, w1, mask=None)
+        in_shape = [1, 3, 25, 25]
+        c = nnConvIncr(3, 5, 3, 1, 1, bias=False).to(device='cuda').eval()
 
-        out_baseline = F.conv2d(x, w)
+        x = torch.randn(in_shape, device='cuda').to(memory_format=torch.channels_last)
+        out_base = c.forward_refresh_reservoirs(x.contiguous())
+        out = c((x, torch.ones_like(x, dtype=bool)))
         diff_count = lambda var: float( var.count_nonzero().cpu().numpy() )
         max_val = lambda var: float( torch.abs(var).max().cpu().numpy() )
-
-        self.assertEqual(diff_count(out - out_baseline)    , 0., "output check")
-
-
-
-
-
-        # my_conv = po.Conv5x5Incr(in_shape, 1, 1, w)
-        # out = my_conv(x)
-        # out_fr = my_conv.forward_refresh_reservoir(x)
-
-        for i in range(10):
-        # out_func = pf.functional_conv_module(x, w1, mask=None)
+        self.assertEqual(diff_count(out_base - out[0])    , 0., "output check")
 
 
 

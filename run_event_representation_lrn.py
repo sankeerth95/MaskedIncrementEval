@@ -1,9 +1,7 @@
-import argparse, os
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
 
-from tqdm import tqdm
 from data_fetchers.continuous_event_datasets import ContinuousEventsDataset
 
 
@@ -46,7 +44,26 @@ if __name__ == '__main__':
         )
 
     test_loader = DataLoader(dataset, collate_fn=collate_events)
+        dataset = NCaltech101(
+            dataset_path
+        )
 
+    test_loader = DataLoader(dataset, collate_fn=collate_events)
+
+
+    model = ClassifierIncrEval()
+    m = torch.load('/home/sankeerth/ev/rpg_event_representation_learning/log/checkpoint_27225_0.7328.pth')
+    model.load_state_dict(m['state_dict'])
+    model = model.to(device).eval()
+ 
+    sum_accuracy = 0
+    sum_loss = 0
+
+
+    with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
+
+        for i_batch, sample in enumerate(test_loader):
+            events, labels = sample
 
     model = ClassifierIncrEval()
     m = torch.load('/home/sankeerth/ev/rpg_event_representation_learning/log/checkpoint_27225_0.7328.pth')
@@ -63,7 +80,6 @@ if __name__ == '__main__':
             events, labels = sample
             events = events.to(device)
             labels = labels.to(device)
-
 
             vox = model.quantization_layer.forward(events)
             vox_cropped = model.crop_and_resize_to_resolution(vox, model.crop_dimension)
@@ -96,7 +112,5 @@ if __name__ == '__main__':
     # print(f"Test Loss: {test_loss}, Test Accuracy: {test_accuracy}")
 
         # show_tensor_image()
-
-
 
 

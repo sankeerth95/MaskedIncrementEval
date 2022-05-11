@@ -19,7 +19,7 @@ def convert_filter_out_channels_last(conv_weights):
 def functional_conv_module(x_incr, conv_weights, mask=None, stride=(1,1), padding=(1,1)):
 
     if mask == None:
-        mask = torch.rand_like(x_incr).le(.6)
+        mask = x_incr.ge(.00001)
 
     out_H = int((x_incr.shape[2] + 2*padding[0] - conv_weights.shape[1] ) // stride[0] + 1)
     out_W = int((x_incr.shape[3] + 2*padding[1] - conv_weights.shape[2] ) // stride[1] + 1)
@@ -33,7 +33,7 @@ def functional_conv_module(x_incr, conv_weights, mask=None, stride=(1,1), paddin
     elif conv_weights.shape[1] == 1:
         conv1x1_increment_ext(x_incr, mask, conv_weights, output_, stride[0])
     else:
-        raise NotImplementedError("not impmented convolution for these dimensions!")
+        raise NotImplementedError("not Implemented convolution for these dimensions!")
 
 
     output_mask = torch.ones_like(output_, dtype=bool)

@@ -1,10 +1,10 @@
-from typing import Tuple
+from typing import OrderedDict, Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import ext.pointops.pointops_functional as pf
+
 from .masked_types import Masked, DenseT
-
-
 from .mask_incr_functional import IncrPointwiseMultiply, IncrementReserve, bn2d_from_module, conv2d_from_module
 
 
@@ -115,7 +115,7 @@ class nnLinearIncr(nn.Linear):
 
 
 #linear module
-class nnConvIncr(nn.Conv2d):
+class nnConvIncrBase(nn.Conv2d):
 
     # def __init__(self,
     #              in_channels: int,
@@ -136,6 +136,33 @@ class nnConvIncr(nn.Conv2d):
 
     def forward_refresh_reservoirs(self, x):
         return super().forward(x)
+
+
+#linear module
+class nnConvIncr(nn.Conv2d):
+
+    def __init__(self,
+                 in_channels: int,
+                 out_channels: int,
+                 kernel_size: Tuple[int, ...],
+                 stride: Tuple[int, ...]=1,
+                 padding: Tuple[int, ...]=0,
+                 bias=False):
+        nn.Conv2d.__init__(self, in_channels, out_channels, kernel_size, stride, padding, bias=bias)
+        self.conv2d_weights = pf.convert_filter_out_channels_last(self.weight).cuda()
+
+    def load_state_dict(self, state_dict: 'OrderedDict[str, torch.Tensor]',
+                        strict: bool = True):
+        nn.Conv2d.load_state_dict(self, state_dict, strict=strict)
+        self.conv2d_weights = pf.convert_filter_out_channels_last(self.weight).cuda()
+
+    def forward(self, x_incr):
+        # print('x_incr: ', x_incr.shape)
+        return conv2d_from_module(x_incr, self.conv2d_weights)
+
+    def forward_refresh_reservoirs(self, x):
+        return super().forward(x)
+
 
 
 #linear module
@@ -180,8 +207,6 @@ class nnSequentialIncr(nn.Sequential):
         for module in self:
             x = module.forward_refresh_reservoirs(x)
         return x
-
-
 
 
 class nnReservedActivation(NonlinearPointOpIncr):
