@@ -64,7 +64,7 @@ if __name__ == '__main__':
                             c,h = model.forward_refresh_reservoirs(event_tensor, None)
                         event_tensor_prev = event_tensor
                     else:
-                        x = event_tensor - event_tensor_prev
+                        x = (event_tensor - event_tensor_prev).to(memory_format=torch.channels_last)
                         with record_function("model_inference"):
                             c_incr, h_incr = model((x, None), None)
                         event_tensor_prev = event_tensor

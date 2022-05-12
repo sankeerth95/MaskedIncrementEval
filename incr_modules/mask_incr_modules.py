@@ -146,7 +146,7 @@ class nnConvIncr(nn.Conv2d):
                  kernel_size: Tuple[int, ...],
                  stride: Tuple[int, ...]=1,
                  padding: Tuple[int, ...]=0,
-                 bias=False):
+                 bias=True):
         nn.Conv2d.__init__(self, in_channels, out_channels, kernel_size, stride, padding, bias=bias)
         self.conv2d_weights = pf.convert_filter_out_channels_last(self.weight).cuda()
 
