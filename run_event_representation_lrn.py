@@ -1,17 +1,13 @@
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
-
 from data_fetchers.continuous_event_datasets import ContinuousEventsDataset
-
-
 from ev_projs.rpg_event_representation_learning.utils.dataset import NCaltech101
 from ev_projs.rpg_event_representation_learning.utils.loader import Loader
 from incr_modules.event_representation_incr import ClassifierIncrEval
 from ev_projs.rpg_event_representation_learning.utils.loss import cross_entropy_loss_and_accuracy
 from torch.profiler import profile, record_function, ProfilerActivity
 import numpy as np
-
 
 
 def collate_events(data):
@@ -29,9 +25,9 @@ def collate_events(data):
 
 if __name__ == '__main__':
     device='cuda'
+    continuous_dataset = True
 
     height, width = 180, 240
-    continuous_dataset = False
     if continuous_dataset:
         memory_format=torch.channels_last
         base_folder = '/home/sankeerth/ev/data/Caltech_data/'
@@ -42,11 +38,8 @@ if __name__ == '__main__':
         dataset = NCaltech101(
             dataset_path
         )
-
-
     test_loader = DataLoader(dataset, collate_fn=collate_events)
 
-
     model = ClassifierIncrEval()
     m = torch.load('/home/sankeerth/ev/rpg_event_representation_learning/log/checkpoint_27225_0.7328.pth')
     model.load_state_dict(m['state_dict'])
@@ -54,32 +47,19 @@ if __name__ == '__main__':
  
     sum_accuracy = 0
     sum_loss = 0
-
-
     with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
 
         for i_batch, sample in enumerate(test_loader):
-            events, labels = sample
+            if continuous_dataset:
+                vox = sample
+                # vox = model.quantization_layer.forward(events)                
+            else:
+                events, labels = sample
+                labels = labels.to(device)
+                events = events.to(device)
+                vox = model.quantization_layer.forward(events)
 
-    model = ClassifierIncrEval()
-    m = torch.load('/home/sankeerth/ev/rpg_event_representation_learning/log/checkpoint_27225_0.7328.pth')
-    model.load_state_dict(m['state_dict'])
-    model = model.to(device).eval()
- 
-    sum_accuracy = 0
-    sum_loss = 0
-
-
-    with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
-
-        for i_batch, sample in enumerate(test_loader):
-            events, labels = sample
-            events = events.to(device)
-            labels = labels.to(device)
-
-            vox = model.quantization_layer.forward(events)
             vox_cropped = model.crop_and_resize_to_resolution(vox, model.crop_dimension)
-
             with torch.no_grad():
                 if i_batch%20 == 0:
                     with record_function("model_inference_base"):

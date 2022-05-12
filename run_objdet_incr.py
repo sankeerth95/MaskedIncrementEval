@@ -57,11 +57,6 @@ if __name__ == '__main__':
 
             if continuous_dataset:
                 histogram = sample_batched
-                histogram = histogram.to(device)
-
-                # Convert spatial dimension to model input size
-                histogram = F.interpolate(histogram.permute(0, 3, 1, 2),
-                                                            torch.Size(model_input_size))
             else:
                 event, bounding_box, histogram = sample_batched
 
@@ -70,6 +65,9 @@ if __name__ == '__main__':
                                                 / width).long()
                 bounding_box[:, :, [1, 3]] = (bounding_box[:, :, [1, 3]] * model_input_size[0].float()
                                                 / height).long()
+
+            histogram = histogram.to(device)
+            histogram = F.interpolate(histogram.permute(0, 3, 1, 2), torch.Size(model_input_size))
 
             with torch.no_grad():
                 if i_batch%20 == 0:
