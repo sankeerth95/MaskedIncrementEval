@@ -43,10 +43,6 @@ if __name__ == '__main__':
             dataset_path
         )
 
-    test_loader = DataLoader(dataset, collate_fn=collate_events)
-        dataset = NCaltech101(
-            dataset_path
-        )
 
     test_loader = DataLoader(dataset, collate_fn=collate_events)
 
@@ -90,7 +86,7 @@ if __name__ == '__main__':
                         pred_labels = model.classifier.forward_refresh_reservoirs(vox_cropped)
                     vox_cropped_prev = vox_cropped
                 else:
-                    x = vox_cropped - vox_cropped_prev
+                    x = (vox_cropped - vox_cropped_prev).to(memory_format=torch.channels_last)
                     with record_function("model_inference"):
                         out, mask = model.classifier((x, None))
                     pred_labels += out
@@ -103,8 +99,8 @@ if __name__ == '__main__':
             if i_batch == 20:
                 break
 
-    print(pred_labels)
-    # print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=15))
+    # print(pred_labels)
+    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=15))
     # print(f"Test Loss: {sum_loss}")
 
     # test_loss = sum_loss.item() / len(test_loader)

@@ -30,6 +30,12 @@ class IncrementReserve:
             self.reservoir = None
         else:
             self.reservoir = x_init.clone().detach()
+            self._adjust_mem_format()
+
+    def _adjust_mem_format(self):
+        # TODO: confirm this: all 4-shape tensors in considered networks are NCHW type:
+        if len(self.reservoir.shape) == 4:
+            self.reservoir = self.reservoir.to(memory_format=torch.channels_last)
 
     # dense/sparse accumulate accumulate
     def accumulate(self, incr: Masked):
@@ -40,6 +46,7 @@ class IncrementReserve:
 
     def update_reservoir(self, x: DenseT):
         self.reservoir = x.clone().detach() # not in place right now :(
+        self._adjust_mem_format()
 
 
 

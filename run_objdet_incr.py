@@ -17,7 +17,7 @@ if __name__ == '__main__':
 
     device='cuda'
     height, width = 180, 240
-    continuous_dataset = False
+    continuous_dataset = True
     if continuous_dataset:
         memory_format=torch.channels_last
         base_folder = '/home/sankeerth/ev/data/Caltech_data/'
@@ -55,30 +55,30 @@ if __name__ == '__main__':
             if i_batch == 20:
                 break
 
+            if continuous_dataset:
+                histogram = sample_batched
+                histogram = histogram.to(device)
 
-            event, bounding_box, histogram = sample_batched
+                # Convert spatial dimension to model input size
+                histogram = F.interpolate(histogram.permute(0, 3, 1, 2),
+                                                            torch.Size(model_input_size))
+            else:
+                event, bounding_box, histogram = sample_batched
 
-            bounding_box = bounding_box.to(device)
-            histogram = histogram.to(device) 
-
-            # Convert spatial dimension to model input size
-            histogram = F.interpolate(histogram.permute(0, 3, 1, 2),
-                                                        torch.Size(model_input_size))
-
-            # Change x, width and y, height
-            bounding_box[:, :, [0, 2]] = (bounding_box[:, :, [0, 2]] * model_input_size[1].float()
-                                            / width).long()
-            bounding_box[:, :, [1, 3]] = (bounding_box[:, :, [1, 3]] * model_input_size[0].float()
-                                            / height).long()
+                bounding_box = bounding_box.to(device)
+                bounding_box[:, :, [0, 2]] = (bounding_box[:, :, [0, 2]] * model_input_size[1].float()
+                                                / width).long()
+                bounding_box[:, :, [1, 3]] = (bounding_box[:, :, [1, 3]] * model_input_size[0].float()
+                                                / height).long()
 
             with torch.no_grad():
-                if i_batch%1 == 0:
+                if i_batch%20 == 0:
                     print(torch.count_nonzero(histogram))
                     with record_function("model_inference_base"):
                         model_output = model.forward_refresh_reservoirs(histogram)
                         histogram_prev = histogram
                 else:
-                    x = histogram-histogram_prev
+                    x = (histogram-histogram_prev).to(memory_format=torch.channels_last)
                     print(torch.count_nonzero(x))
                     with record_function("model_inference"):
                         out, mask = model((x, None))
@@ -97,7 +97,7 @@ if __name__ == '__main__':
 
 
     # print(model_output)
-    # print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=10))
+    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=10))
     print(f"Test Loss: {sum_loss}")
 
         # show_tensor_image()

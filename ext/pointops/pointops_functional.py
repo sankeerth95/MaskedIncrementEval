@@ -1,6 +1,6 @@
 from time import sleep
 import torch
-from ._C_ext.pointops.pointops_ext import activation_increment, conv3x3_increment_ext, conv5x5_increment_ext, conv1x1_increment_ext
+from ._C_ext.pointops.pointops_ext import activation_increment, conv7x7_increment_ext, conv3x3_increment_ext, conv5x5_increment_ext, conv1x1_increment_ext
 
 
 
@@ -21,6 +21,14 @@ def functional_conv_module(x_incr, conv_weights, mask=None, stride=(1,1), paddin
     if mask == None:
         mask = x_incr.ge(.00001)
 
+    #  TODO: remove later; checks only
+    if x_incr.is_contiguous():
+        raise AssertionError('received non NHWC tensor')
+    if padding[0] != (conv_weights.shape[1] - 1 ) // 2:
+        print(padding[0], conv_weights.shape[1])
+        raise AssertionError('not implemented for non-same type padding')
+
+
     out_H = int((x_incr.shape[2] + 2*padding[0] - conv_weights.shape[1] ) // stride[0] + 1)
     out_W = int((x_incr.shape[3] + 2*padding[1] - conv_weights.shape[2] ) // stride[1] + 1)
     out_C = conv_weights.shape[3]
@@ -32,11 +40,13 @@ def functional_conv_module(x_incr, conv_weights, mask=None, stride=(1,1), paddin
         conv5x5_increment_ext(x_incr, mask, conv_weights, output_, stride[0])
     elif conv_weights.shape[1] == 1:
         conv1x1_increment_ext(x_incr, mask, conv_weights, output_, stride[0])
+    elif conv_weights.shape[1] == 7:
+        conv7x7_increment_ext(x_incr, mask, conv_weights, output_, stride[0])
     else:
         raise NotImplementedError("not Implemented convolution for these dimensions!")
 
 
     output_mask = torch.ones_like(output_, dtype=bool)
-    return output_, output_mask
+    return [output_, output_mask]
 
 

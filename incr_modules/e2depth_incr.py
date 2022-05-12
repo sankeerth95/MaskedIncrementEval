@@ -136,7 +136,7 @@ class ConvLSTMIncr(nn.Module):
 
             # create the zero tensor if it has not been created already
             state_size = tuple([batch_size, self.hidden_size] + list(spatial_size))
-            if state_size not in self.zero_tensors: # TODO: Need to deal with sparsifying this later.
+            if state_size not in self.zero_tensors:
                 # allocate a tensor with size `spatial_size`, filled with zero (if it has not been allocated already)
                 self.zero_tensors[state_size] = (
                     torch.zeros(state_size, device=input_.device).to(memory_format=torch.channels_last),
@@ -224,7 +224,7 @@ class ResidualBlockIncr(nn.Module):
             out_incr = self.bn2(out_incr)
 
         if self.downsample:
-            residual_incr = self.downsample(x_incr) # TODO: check if this is linear
+            residual_incr = self.downsample(x_incr)
 
         out_incr = (out_incr[0] + residual_incr[0], None) # todo : check accumulation mask of doing this way
         out_incr = self.relu2(out_incr)
@@ -273,10 +273,8 @@ class TransposedConvLayerIncr(nn.Module):
     def forward(self, x_incr: Masked) -> Masked:
         out_incr = self.transposed_conv2d(x_incr) 
 
-        if self.norm =='BN':
+        if self.norm in ['BN', 'IN']:
             out_incr = self.norm_layer(out_incr)
-        elif self.norm == 'IN':
-            raise NotImplementedError # TODO: Instance norm
 
         if self.activation is not None:
             out_incr = self.activation(out_incr)

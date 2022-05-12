@@ -303,6 +303,39 @@ static void conv1x1_increment_cuda_ext(
     CUDA_CHECK_ERRORS();
 }
 
+
+
+template <typename scalar_t, int STRIDE=1, int WARP_SIZE=32, int H_OUT_PER_BLOCK=6, int W_OUT_PER_BLOCK=6>
+static void conv7x7_increment_cuda_ext(
+    torch::Tensor const &in_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr  // expect a zero tensor
+){
+    int const out_C = out_incr.sizes()[1], out_H=out_incr.sizes()[2], out_W=out_incr.sizes()[3];
+    int const in_C = in_incr.sizes()[1], in_H=in_incr.sizes()[2], in_W=in_incr.sizes()[3];
+
+    int constexpr threads = 256;
+    int const W_up = divup(out_W, W_OUT_PER_BLOCK);
+    int const H_up = divup(out_H, H_OUT_PER_BLOCK);
+    int const C_up = divup(out_C, threads);
+    dim3 const blocks(W_up, H_up, C_up);
+    int constexpr out_channels_per_block = 256;
+    // printf("kernel configuration: {%d %d %d}, {%d %d %d}\n", blocks.x, blocks.y, blocks.z, threads.x, threads.y, threads.z);
+    conv_kxk_ext<scalar_t, 7, STRIDE, WARP_SIZE, W_OUT_PER_BLOCK, H_OUT_PER_BLOCK, out_channels_per_block, threads> <<<blocks, threads>>>(
+        filter.data_ptr<scalar_t>(),
+        mask.data_ptr<bool>(),
+        in_incr.data_ptr<scalar_t>(),
+        out_incr.data_ptr<scalar_t>(),
+        in_C, in_H, in_W,
+        out_C, out_H, out_W
+    );
+
+    CUDA_CHECK_ERRORS();
+}
+
+
+
 void convkxk_increment_ext_cuda_wrapper(
     torch::Tensor const &in_incr,
     torch::Tensor const &mask,
@@ -355,6 +388,26 @@ void convkxk_increment_ext_cuda_wrapper(
             filter,
             out_incr  // expect a zero tensor
         );
+    } else if (k == 7){
+        // stride == 1
+        if(stride == 1){
+            conv7x7_increment_cuda_ext<float, 1, 32, 5, 5>(
+                in_incr,
+                mask,
+                filter,
+                out_incr  // expect a zero tensor
+            );
+        }
+        else if (stride == 2){
+            conv7x7_increment_cuda_ext<float, 2, 32, 5, 5>(
+                in_incr,
+                mask,
+                filter,
+                out_incr  // expect a zero tensor
+            );
+        } else {
+            throw std::logic_error("7x7 convolution not implemented for this stride .");
+        }
     } else {
         throw std::logic_error("Convolution kxk not implemented for this k.");
     }

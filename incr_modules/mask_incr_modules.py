@@ -96,7 +96,6 @@ class NonlinearPointOpIncr(IncrementMaskModule):
 
     # need to be replaced with c++ binding
     def _nonlin(self, x_incr: Masked):
-        self.reservoir_in.reservoir + x_incr[0]
         output_incr = self.op(self.reservoir_in.reservoir + x_incr[0]) - self.op(self.reservoir_in.reservoir)
         return [output_incr, x_incr[1]]
 
@@ -158,7 +157,7 @@ class nnConvIncr(nn.Conv2d):
 
     def forward(self, x_incr):
         # print('x_incr: ', x_incr.shape)
-        return conv2d_from_module(x_incr, self.conv2d_weights)
+        return conv2d_from_module(x_incr, self.conv2d_weights, stride=self.stride, padding=self.padding)
 
     def forward_refresh_reservoirs(self, x):
         return super().forward(x)

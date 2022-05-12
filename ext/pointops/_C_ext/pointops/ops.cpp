@@ -97,12 +97,29 @@ void conv5x5_increment_ext(
     );
 }
 
+void conv7x7_increment_ext(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr,
+    int stride
+){
+    convkxk_template<7>(
+      x_incr,
+      mask,
+      filter,
+      out_incr,
+      stride
+    );
+}
+
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("activation_increment" , &activation_increment , "activate and increment x tensor;");
   m.def("conv1x1_increment_ext", &conv1x1_increment_ext, "convolution 1x1 kernel;");
   m.def("conv3x3_increment_ext", &conv3x3_increment_ext, "convolution 3x3 kernel;");
   m.def("conv5x5_increment_ext", &conv5x5_increment_ext, "convolution 5x5 kernel;");
+  m.def("conv7x7_increment_ext", &conv7x7_increment_ext, "convolution 7x7 kernel;");
 }
 
 

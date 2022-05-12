@@ -43,4 +43,13 @@ void conv5x5_increment_ext(
 );
 
 
+void conv7x7_increment_ext(
+    torch::Tensor const &x_incr,
+    torch::Tensor const &mask,
+    torch::Tensor const &filter,
+    torch::Tensor &out_incr,
+    int stride
+);
+
+
 
