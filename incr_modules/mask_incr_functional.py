@@ -25,7 +25,7 @@ class AccumStreamManager:
 # accumulates inputs: have to make this conditional
 class IncrementReserve:
     def __init__(self, x_init = None):
-        # self.accum_stream = AccumStreamManager.createAccumStream() 
+        self.accum_stream = AccumStreamManager.createAccumStream() 
         if x_init == None:
             self.reservoir = None
         else:
@@ -40,9 +40,8 @@ class IncrementReserve:
     # dense/sparse accumulate accumulate
     def accumulate(self, incr: Masked):
         self.reservoir.add_(incr[0])
-        # return
         # with torch.cuda.stream(self.accum_stream.get_stream()):
-        #     self.reservoir.add_(incr)
+        #     self.reservoir.add_(incr[0])
 
     def update_reservoir(self, x: DenseT):
         self.reservoir = x.clone().detach() # not in place right now :(
@@ -51,7 +50,10 @@ class IncrementReserve:
 
 
 def IncrPointwiseMultiply(x1_incr: Masked, x1: IncrementReserve, x2_incr: Masked, x2: IncrementReserve) -> Masked:
-    return [x1_incr[0]*x2_incr[0] + x2.reservoir*x1_incr[0] + x1.reservoir*x2_incr[0], None]
+    # return [x2_incr[0], None]
+    return [(x2_incr[0] + x2.reservoir)*x1_incr[0] + x1.reservoir*x2_incr[0], None]
+
+    # return [(x2_incr[0] + x2.reservoir)*x1_incr[0] + x1.reservoir*x2_incr[0], None]
     # return [x1_incr[0]*x2_incr[0] + x2.reservoir*x1_incr[0] + x1.reservoir*x2_incr[0], x1_incr[1]|x2_incr[1]]
 
 

@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import ext.pointops.pointops_functional as pf
+from incr_modules.utils import print_sparsity
 
 from .masked_types import Masked, DenseT
 from .mask_incr_functional import IncrPointwiseMultiply, IncrementReserve, bn2d_from_module, conv2d_from_module
@@ -18,7 +19,7 @@ class IncrementMaskModule(nn.Module):
 
 # filter: only allow significant elements to pass through
 class KFencedMaskModule(IncrementMaskModule):
-    def __init__(self, k: float=0.1, field=5):
+    def __init__(self, k: float=0.1, field=3):
         super().__init__()
         # internally defined reserves
         self.in_reserve = IncrementReserve()
@@ -32,12 +33,12 @@ class KFencedMaskModule(IncrementMaskModule):
 
     # accumulate operations: sparsed
     def forward(self, incr: Masked) -> Masked:
-        return incr
-        T1 = self.delta.reservoir + incr                    # critical path; could be sparse
+        # return incr
+        T1 = self.delta.reservoir + incr[0]                 # critical path; could be sparse
         f_delta = self.floor_by_k(T1)                   # critical path; could be sparse
         self.delta.update_reservoir(T1 - f_delta)                       # out of order; sparse
         self.in_reserve.accumulate(f_delta)         # out of order; sparse: conditional: doesn't need to be done
-        return f_delta
+        return f_delta, None
 
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
         self.in_reserve.update_reservoir(x)
@@ -52,6 +53,7 @@ class PointwiseMultiplyIncr(IncrementMaskModule):
         # define reserves:
         self.x1_res: IncrementReserve = x1res_module
         self.x2_res: IncrementReserve = x2res_module
+
 
     def forward(self, x1_incr: Masked, x2_incr: Masked) -> Masked:
         output_incr = IncrPointwiseMultiply(x1_incr, self.x1_res, x2_incr, self.x2_res)
@@ -104,8 +106,10 @@ class nnLinearIncr(nn.Linear):
     
     # fully connected implementation
     def forward(self, x_incr: Masked) -> Masked:
-        out = F.linear(x_incr[0], self.weight, bias=None)
-        return out, torch.ones_like(out, dtype=bool)
+        # print("tot, nz = ", x_incr[0].numel(), (x_incr[0]>=0.001).count_nonzero())
+        return self.weight*x_incr[0]
+        # out = F.linear(x_incr[0], self.weight, bias=None)
+        # return out, None
 
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
         return super().forward(x)
@@ -129,8 +133,8 @@ class nnConvIncrBase(nn.Conv2d):
 
     def forward(self, x_incr):
         # print('x_incr: ', x_incr.shape)
-        out = F.conv2d(x_incr[0], self.weight, bias=None, padding=self.padding, stride=self.stride)
-        return out, torch.ones_like(out, dtype=bool)
+        # out = F.conv2d(x_incr[0], self.weight, bias=None, padding=self.padding, stride=self.stride)
+        # return out, torch.ones_like(out, dtype=bool)
         return conv2d_from_module(x_incr, self.conv2d_weights)
 
     def forward_refresh_reservoirs(self, x):
@@ -157,9 +161,27 @@ class nnConvIncr(nn.Conv2d):
 
     def forward(self, x_incr):
         # print('x_incr: ', x_incr.shape)
+        # print_sparsity(x_incr, "conv: {}".format(self.weight.shape[2]) )
+
+        if x_incr[0].is_contiguous():
+            raise AssertionError('received non NHWC tensor')
+        if self.padding[0] != (self.conv2d_weights.shape[1] - 1 ) // 2:
+            # fallback
+            out = F.conv2d(x_incr[0], self.weight, bias=None, padding=self.padding, stride=self.stride)
+            return out, torch.ones_like(out, dtype=bool)
+
         return conv2d_from_module(x_incr, self.conv2d_weights, stride=self.stride, padding=self.padding)
 
+
+
     def forward_refresh_reservoirs(self, x):
+
+        # out_H = int((x.shape[2] + 2*self.padding[0] - self.conv2d_weights.shape[1] ) // self.stride[0] + 1)
+        # out_W = int((x.shape[3] + 2*self.padding[1] - self.conv2d_weights.shape[2] ) // self.stride[1] + 1)
+        # out_C = self.conv2d_weights.shape[3]
+        # batches = x.shape[0]
+        # output_= torch.empty((batches, out_C, out_H, out_W), dtype=torch.float, device='cuda')
+        # return output_
         return super().forward(x)
 
 
