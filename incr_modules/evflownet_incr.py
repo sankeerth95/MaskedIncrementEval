@@ -42,8 +42,8 @@ class ConvGRUIncr(nn.Module):
     def forward(self, input_incr, prev_state):
 
         # get batch and spatial sizes
-        batch_size = input_incr.data.size()[0]
-        spatial_size = input_incr.data.size()[2:]
+        batch_size = input_incr[0].data.size()[0]
+        spatial_size = input_incr[0].data.size()[2:]
 
         # generate empty prev_state, if None is provided
         if prev_state is None:
@@ -65,7 +65,7 @@ class ConvGRUIncr(nn.Module):
         return new_state, new_state
 
 
-    def forward_refresh_reservoirs(self, x):
+    def forward_refresh_reservoirs(self, x, prev_state):
         # get batch and spatial sizes
         batch_size = x.data.size()[0]
         spatial_size = x.data.size()[2:]
@@ -265,7 +265,7 @@ class ResidualBlockIncr(nn.Module):
         if self.activation is not None:
             out1 = self.activation.forward_refresh_reservoirs(out1)
 
-        out2 = self.conv2(out1)
+        out2 = self.conv2.forward_refresh_reservoirs(out1)
         if self.norm in ["BN", "IN"]:
             out2 = self.bn2.forward_refresh_reservoirs(out2)
 
@@ -407,7 +407,7 @@ class MultiResUNetRecurrentIncr(nn.Module):
         decoder_output_sizes = reversed(self.encoder_input_sizes)
         for output_size in decoder_output_sizes:
             preds.append(
-                ResidualBlockIncr(
+                ConvLayerIncr(
                     output_size,
                     self.num_output_channels,
                     1,
