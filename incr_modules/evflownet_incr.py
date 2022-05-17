@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from incr_modules.mask_incr_functional import IncrPointwiseMultiply
 
-from incr_modules.mask_incr_modules import nnBatchNorm2dIncr, nnConvIncr, nnReservedActivation, nnSigmoidIncr, nnTanhIncr
+from incr_modules.mask_incr_modules import nnBatchNorm2dIncr, nnConvIncr, nnReservedActivation, nnReservedMultiplication, nnSigmoidIncr, nnTanhIncr
 
 
 
@@ -38,6 +39,7 @@ class ConvGRUIncr(nn.Module):
         self.sigmoid2 = nnSigmoidIncr()
         self.tanh     = nnTanhIncr()
 
+        self.mult = nnReservedMultiplication()
 
     def forward(self, input_incr, prev_state):
 
@@ -48,10 +50,10 @@ class ConvGRUIncr(nn.Module):
         # generate empty prev_state, if None is provided
         if prev_state is None:
             state_size = [batch_size, self.hidden_size] + list(spatial_size)
-            prev_state = torch.zeros(state_size, dtype=input_incr.dtype, device=input_incr.device).to(memory_format=torch.channels_last)
+            prev_state = [torch.zeros(state_size, dtype=input_incr[0].dtype, device=input_incr[0].device).to(memory_format=torch.channels_last), None]
 
         # data size is [batch, channel, height, width]
-        stacked_inputs = torch.cat([input_incr, prev_state], dim=1)
+        stacked_inputs = [torch.cat([input_incr[0], prev_state[0]], dim=1), None]
 
 
         update = self.sigmoid1(self.update_gate(stacked_inputs))
@@ -59,8 +61,11 @@ class ConvGRUIncr(nn.Module):
 
         out_inputs = self.tanh(self.out_gate(stacked_inputs))
 
+        # new_state = prev_state * (1 - update) + out_inputs * update
+        # new_state = prev_state + (out_inputs-prev_state) * update
 
-        new_state = prev_state * (1 - update) + out_inputs * update
+        new_state = [prev_state[0] + self.mult([out_inputs[0]-prev_state[0], None], update)[0], None]
+
 
         return new_state, new_state
 
@@ -73,7 +78,7 @@ class ConvGRUIncr(nn.Module):
         # generate empty prev_state, if None is provided
         if prev_state is None:
             state_size = [batch_size, self.hidden_size] + list(spatial_size)
-            prev_state = torch.zeros(state_size, dtype=x.dtype, device=x.device)
+            prev_state = torch.zeros(state_size, dtype=x.dtype, device=x.device).to(memory_format=torch.channels_last)
 
         # data size is [batch, channel, height, width]
         stacked_inputs = torch.cat([x, prev_state], dim=1)
@@ -82,8 +87,12 @@ class ConvGRUIncr(nn.Module):
         reset = self.sigmoid2.forward_refresh_reservoirs(self.reset_gate.forward_refresh_reservoirs(stacked_inputs))
         out_inputs = self.tanh.forward_refresh_reservoirs(self.out_gate.forward_refresh_reservoirs(torch.cat([x, prev_state * reset], dim=1)))
         
+
         
-        new_state = prev_state * (1 - update) + out_inputs * update
+        # new_state = prev_state * (1 - update) + out_inputs * update
+
+        new_state = prev_state + self.mult.forward_refresh_reservoirs(out_inputs-prev_state, update)
+
 
         return new_state, new_state        
 
@@ -312,7 +321,7 @@ class UpsampleConvLayerIncr(nn.Module):
 
 
     def forward(self, x):
-        x_upsampled = F.interpolate(x, scale_factor=2, mode="bilinear", align_corners=False)
+        x_upsampled = [F.interpolate(x[0], scale_factor=2, mode="bilinear", align_corners=False), None]
         out = self.conv2d(x_upsampled)
         if self.norm in ["BN", "IN"]:
             out = self.norm_layer(out)
@@ -436,12 +445,14 @@ class MultiResUNetRecurrentIncr(nn.Module):
 
     def forward(self, x_incr):
 
+
+        states_incr = [None] * self.num_states
         # encoder
         blocks = []
         for i, encoder in enumerate(self.encoders):
-            x_incr, state = encoder(x_incr, self.states[i])
+            x_incr, state = encoder(x_incr, states_incr[i])
             blocks.append(x_incr)
-            self.states[i] = state
+            states_incr[i] = state
 
         # residual blocks
         for resblock in self.resblocks:
@@ -450,16 +461,16 @@ class MultiResUNetRecurrentIncr(nn.Module):
         # decoder and multires predictions
         predictions = []
         for i, (decoder, pred) in enumerate(zip(self.decoders, self.preds)):
-            x_incr = self.skip_ftn(x_incr, blocks[self.num_encoders - i - 1])
+            x_incr = [self.skip_ftn(x_incr[0], blocks[self.num_encoders - i - 1][0]), None]
             if i > 0:
-                x_incr = self.skip_ftn(predictions[-1], x_incr)
+                x_incr = [self.skip_ftn(predictions[-1][0], x_incr[0]), None]
             x_incr = decoder(x_incr)
             predictions.append(pred(x_incr))
 
         return predictions
 
 
-    def forward_refresh_reservoir(self, x):
+    def forward_refresh_reservoirs(self, x):
         blocks = []
         for i, encoder in enumerate(self.encoders):
             x, state = encoder.forward_refresh_reservoirs(x, self.states[i])

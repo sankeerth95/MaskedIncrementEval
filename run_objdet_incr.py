@@ -1,5 +1,4 @@
-from os import listdir
-import os
+import os, subprocess
 import torch
 import torch.nn.functional as F
 import numpy as np
@@ -38,12 +37,11 @@ if __name__ == '__main__':
 
     val_loader = DataLoader(dataset, shuffle=False, batch_size=1)
 
-    
     model = DenseObjectDetIncr(101, in_c=2, small_out_map=True)
     lp = '/home/sankeerth/ev/rpg_asynet/log/20220508-215001/checkpoints/model_step_49.pth'
     m = torch.load(lp)
-    model.load_state_dict(m['state_dict'])
-    model = model.to(device).eval()
+    model.load_state_dict(m['state_dict'], strict=False)
+    model = model.eval().to(device)
 
     model_input_size = torch.tensor([191, 255])
     sum_accuracy = 0
@@ -52,7 +50,7 @@ if __name__ == '__main__':
 
         for i_batch, sample_batched in enumerate(val_loader):
 
-            if i_batch == 20:
+            if i_batch == 40:
                 break
 
             if continuous_dataset:
@@ -71,17 +69,19 @@ if __name__ == '__main__':
 
             with torch.no_grad():
                 if i_batch%20 == 0:
-                    print(torch.count_nonzero(histogram))
+                    print('refresh: ', torch.count_nonzero(histogram))
                     with record_function("model_inference_base"):
                         model_output = model.forward_refresh_reservoirs(histogram)
                         histogram_prev = histogram
                 else:
+                    # 
+                    # m(torch.randn((1, 2, 191, 255)))                    
                     x = (histogram-histogram_prev).to(memory_format=torch.channels_last)
-                    print(torch.count_nonzero(x))
+                    print(torch.count_nonzero(x), x.numel(), x.shape)
                     with record_function("model_inference"):
                         out, mask = model((x, None))
-                        model_output += out
-                        histogram_prev = histogram
+                    model_output += out
+                    histogram_prev = histogram
 
             # loss = yoloLoss(model_output, bounding_box, model_input_size)[0]
 
@@ -95,7 +95,25 @@ if __name__ == '__main__':
 
 
     # print(model_output)
-    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=10))
+    print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=30))
+
+
+
+    write=True
+    if write:
+        prof.export_chrome_trace("trace_{}.json".format(device))
+        prof.export_stacks("/tmp/profiler_stacks.txt", "self_{}_time_total".format(device))
+        with open('stack_flame_{}.svg'.format(device), 'w') as fp:
+            subprocess.run(
+                [ '/home/sankeerth/FlameGraph/flamegraph.pl', 
+                '--title', 
+                "{} time_total".format(device), 
+                '--countname',
+                "us.", 
+                '--reverse', 
+                '/tmp/profiler_stacks.txt'],
+                stdout=fp
+            )
     print(f"Test Loss: {sum_loss}")
 
         # show_tensor_image()

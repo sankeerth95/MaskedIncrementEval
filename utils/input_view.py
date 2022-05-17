@@ -5,12 +5,17 @@ import cv2
 
 def show_tensor_image(x: torch.Tensor):
     # visualize the zeroth bin only
-
     numpy_image = x[:, :, 0].cpu().numpy()
     cv2.imshow('a',cv2.Mat(numpy_image))
     cv2.waitKey(100)
 
 
+
+def show_tensor_image_CHW(x: torch.Tensor):
+    # visualize the zeroth bin only
+    numpy_image = x[0, :, :].cpu().numpy()
+    cv2.imshow('a',cv2.Mat(numpy_image))
+    cv2.waitKey(10)
 
 def show_two_tensor_image(x1: torch.Tensor, x2:torch.Tensor):
     # visualize the zeroth bin only

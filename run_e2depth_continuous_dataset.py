@@ -1,5 +1,4 @@
-import argparse
-import profile
+import argparse, subprocess
 import torch
 from torch.nn import ReflectionPad2d
 from torch.profiler import profile, record_function, ProfilerActivity
@@ -22,7 +21,7 @@ if __name__ == '__main__':
     # memory_format
     if continuous_data:
         dataset = ContinuousEventsDataset(base_folder=base_folder, event_folder='events/data',\
-                width=width, height=height, window_size = 0.05, time_shift = 0.05) # 1 ms time shift
+                width=width, height=height, window_size = 0.05, time_shift = 0.001) # 1 ms time shift
     else:
         dataset = VoxelGridDataset(base_folder, 'events/voxels', transform=None, normalize=False)
 
@@ -37,7 +36,6 @@ if __name__ == '__main__':
         estimator = DepthEstimatorIncr(model, height, width, model.num_bins, args)
         for i in range(1000):
             estimator.update_reconstruction(dataset[i], i)
-
     else:
         class options:
             hot_pixels_file=None
@@ -71,4 +69,21 @@ if __name__ == '__main__':
                         c += c_incr[0]
     
         print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=15))
+
+        write=False
+        if write:
+            prof.export_chrome_trace("trace_{}.json".format(device))
+            prof.export_stacks("/tmp/profiler_stacks.txt", "self_{}_time_total".format(device))
+            with open('stack_flame_{}.svg'.format(device), 'w') as fp:
+                subprocess.run(
+                    [ '/home/sankeerth/FlameGraph/flamegraph.pl', 
+                    '--title', 
+                    "{} time_total".format(device), 
+                    '--countname',
+                    "us.", 
+                    '--reverse', 
+                    '/tmp/profiler_stacks.txt'],
+                    stdout=fp
+                )
+
 

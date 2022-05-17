@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .mask_incr_modules import nnReluIncr, nnSequentialIncr, nnConvIncr, nnBatchNorm2dIncr, nnLinearIncr, nnMaxPool2dIncr
+from .mask_incr_modules import KFencedMaskModule, nnReluIncr, nnSequentialIncr, nnConvIncr, nnBatchNorm2dIncr, nnLinearIncr, nnMaxPool2dIncr
 
 class DenseObjectDetIncr(nn.Module):
     def __init__(self, nr_classes, in_c=2, nr_box=2, small_out_map=True):
@@ -42,7 +42,8 @@ class DenseObjectDetIncr(nn.Module):
                 nnConvIncr(out_c, out_c, kernel_size=self.kernel_size, padding=(1, 1), bias=False),
                 nnBatchNorm2dIncr(out_c),
                 nnReluIncr(),
-                nnMaxPool2dIncr(kernel_size=self.kernel_size, stride=2)
+                nnMaxPool2dIncr(kernel_size=self.kernel_size, stride=2),
+                KFencedMaskModule()
             )
         else:
             return nnSequentialIncr(
@@ -51,13 +52,13 @@ class DenseObjectDetIncr(nn.Module):
                 nnReluIncr(),
                 nnConvIncr(out_c, out_c, kernel_size=self.kernel_size, padding=(1, 1), bias=False),
                 nnBatchNorm2dIncr(out_c),
-                nnReluIncr()
+                nnReluIncr(),
             )
 
 
     def forward(self, x_incr):
         x = self.conv_layers(x_incr)
-        x = torch.flatten(x[0], 1)
+        x[0] = torch.flatten(x[0], 1)
         # x = x.view(-1, self.linear_input_features)
         x = self.linear_1(x)
         x = self.relu1(x)

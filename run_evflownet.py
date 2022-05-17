@@ -1,14 +1,13 @@
-import argparse
+import argparse, os, subprocess
 import torch
 import torch.nn.functional as F
+import numpy as np
 
 from ev_projs.event_flow.dataloader.h5 import H5Loader
 from ev_projs.event_flow.eval_flow import test
 from ev_projs.event_flow.configs.parser import YAMLParser
 from ev_projs.event_flow.models.model import RecEVFlowNet
 
-import os, subprocess
-import numpy as np
 from torch.utils.data import DataLoader
 from data_fetchers.continuous_event_datasets import ContinuousEventsDataset
 from torch.profiler import profile, record_function, ProfilerActivity
@@ -86,7 +85,7 @@ if __name__ == "__main__":
                 event_voxels = inputs["event_voxel"].to(device, memory_format=torch.channels_last)
                 event_cnt = inputs["event_cnt"].to(device=device, memory_format=torch.channels_last)
 
-                if i_batch%1 == 0:
+                if i_batch%40 == 0:
                     with record_function("model_inference_base"):
                         # model_output = model(
                         #     event_voxels, event_cnt, log=config["vis"]["activity"]
@@ -95,16 +94,14 @@ if __name__ == "__main__":
                             event_cnt
                         )
                 else:
-                    # 
-                    event_voxel = event_voxels-event_voxels_prev
-                    event_cnt = event_cnt - event_cnt_prev
-                    # m(torch.randn((1, 2, 191, 255)))
-                    event_voxel_incr = (event_voxel-event_voxels_prev).to(memory_format=torch.channels_last)
+                    event_voxel_incr = (event_voxels-event_voxels_prev).to(memory_format=torch.channels_last)
                     event_cnt_incr = (event_cnt-event_cnt_prev).to(memory_format=torch.channels_last)
-                    with record_function("model_inference"):
-                        out, mask = model((event_voxel_incr, None), (event_cnt_incr, None), log=config["vis"]["activity"])
+                    print(event_cnt_incr.count_nonzero(), event_cnt.numel())
 
-                    model_output += out
+                    with record_function("model_inference"):
+                        preds = model((event_cnt_incr, None))
+
+                    model_output += preds[-1][0]
 
                 event_voxels_prev = event_voxels
                 event_cnt_prev = event_cnt
@@ -143,53 +140,8 @@ if __name__ == "__main__":
                 stdout=fp
             )
     print(f"Test Loss: {sum_loss}")
-
         # show_tensor_image()
 
-
-
-
-
 exit()
-
-
-
-if __name__ == '__main__':
-
-    device = 'cuda'
-
-    model = EVFlowNet(config["model"]).to(device)
-    model = load_model(args.runid, model, device)
-    model.eval()
-
-    # data loader
-    data = H5Loader(config, config["model"]["num_bins"])
-    dataloader = torch.utils.data.DataLoader(
-        data,
-        drop_last=True,
-        batch_size=config["loader"]["batch_size"],
-        collate_fn=data.custom_collate,
-        worker_init_fn=config_parser.worker_init_fn
-    )
-
-    with torch.no_grad():
-
-        for inputs in dataloader:
-
-            if data.new_seq:
-                data.new_seq = False
-                activity_log = None
-                model.reset_states()
-
-            # finish inference loop
-            if data.seq_num >= len(data.files):
-                end_test = True
-                break
-
-            # forward pass
-            x = model(
-                inputs["event_voxel"].to(device), inputs["event_cnt"].to(device), log=config["vis"]["activity"]
-            )
-
 
 

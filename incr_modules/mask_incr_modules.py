@@ -19,7 +19,7 @@ class IncrementMaskModule(nn.Module):
 
 # filter: only allow significant elements to pass through
 class KFencedMaskModule(IncrementMaskModule):
-    def __init__(self, k: float=0.1, field=3):
+    def __init__(self, k: float=1.1, field=3):
         super().__init__()
         # internally defined reserves
         self.in_reserve = IncrementReserve()
@@ -107,9 +107,9 @@ class nnLinearIncr(nn.Linear):
     # fully connected implementation
     def forward(self, x_incr: Masked) -> Masked:
         # print("tot, nz = ", x_incr[0].numel(), (x_incr[0]>=0.001).count_nonzero())
-        return self.weight*x_incr[0]
-        # out = F.linear(x_incr[0], self.weight, bias=None)
-        # return out, None
+        # return self.weight*x_incr[0], None
+        out = F.linear(x_incr[0], self.weight, bias=None)
+        return out, None
 
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
         return super().forward(x)
@@ -153,6 +153,7 @@ class nnConvIncr(nn.Conv2d):
                  bias=True):
         nn.Conv2d.__init__(self, in_channels, out_channels, kernel_size, stride, padding, bias=bias)
         self.conv2d_weights = pf.convert_filter_out_channels_last(self.weight).cuda()
+        self.kf = KFencedMaskModule()
 
     def load_state_dict(self, state_dict: 'OrderedDict[str, torch.Tensor]',
                         strict: bool = True):
@@ -161,17 +162,18 @@ class nnConvIncr(nn.Conv2d):
 
     def forward(self, x_incr):
         # print('x_incr: ', x_incr.shape)
-        # print_sparsity(x_incr, "conv: {}".format(self.weight.shape[2]) )
+        # x_incr = self.kf(x_incr)
+
+        print_sparsity(x_incr, "conv: {}".format(self.weight.shape[2]) )
 
         if x_incr[0].is_contiguous():
             raise AssertionError('received non NHWC tensor')
         if self.padding[0] != (self.conv2d_weights.shape[1] - 1 ) // 2:
             # fallback
             out = F.conv2d(x_incr[0], self.weight, bias=None, padding=self.padding, stride=self.stride)
-            return out, torch.ones_like(out, dtype=bool)
+            return out, None
 
         return conv2d_from_module(x_incr, self.conv2d_weights, stride=self.stride, padding=self.padding)
-
 
 
     def forward_refresh_reservoirs(self, x):
@@ -182,8 +184,8 @@ class nnConvIncr(nn.Conv2d):
         # batches = x.shape[0]
         # output_= torch.empty((batches, out_C, out_H, out_W), dtype=torch.float, device='cuda')
         # return output_
+        # x = self.kf.forward_refresh_reservoirs(x)
         return super().forward(x)
-
 
 
 #linear module
