@@ -59,7 +59,7 @@ class BenchmarkNetwork:
     def benchmark(self,  maxiter = 10, save_profiler_data=False, print_profiler_data=True) -> float :
         with torch.no_grad():
             with self.profiler.profiler() as prof:
-                for i in tqdm(range(maxiter)):
+                for i in range(maxiter):
                     sample = self.input_h.get_single_sample(i)
                     with record_function("model_inference"):
                         self.model_h.run_once(sample)

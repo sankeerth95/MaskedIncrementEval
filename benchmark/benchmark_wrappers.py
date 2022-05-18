@@ -1,13 +1,13 @@
-from benchmark.model_getter import ModelGetter
-from benchmark.model_handlers import IncrModelHandler, BaselineModelhandler
-from benchmark.input_handlers import IncrDatasetInputHandler, IncrDatasetInputHandler_2args, RandomInputHandler, SparseRandomInputHandler, StructurallySparseRandomInputHandlerNCHW
+# from benchmark.model_getter import ModelGetter
+# from benchmark.model_handlers import IncrModelHandler, BaselineModelhandler
+from benchmark.input_handlers import RandomInputHandler
 from benchmark.operations import ActivationHandler, ActivationIncrHandler, Conv2dBaseline, Conv3x3IncrBaseline
 from benchmark.ops_benchmark import BenchmarkNetwork
 
 def benchmark_e2vid_incr(pth=None):
     device = 'cuda'
     input_h = IncrDatasetInputHandler_2args(start_index=10, device=device)
-    op = ModelGetter.get_e2vid_incr_model(pth).to(device)    
+    op = ModelGetter.get_e2vid_incr_model(pth).to(device)
     model_h = IncrModelHandler(op)
     model_h.refresh(input_h.prev_x)
     benchmark = BenchmarkNetwork(input_h, model_h)
@@ -16,7 +16,7 @@ def benchmark_e2vid_incr(pth=None):
 def benchmark_e2vid(pth=None):
     device = 'cuda'
     input_h = IncrDatasetInputHandler(start_index=10, device=device)
-    op = ModelGetter.get_e2vid_model(pth).to(device)    
+    op = ModelGetter.get_e2vid_model(pth).to(device)
     model_h = BaselineModelhandler(op)
     benchmark = BenchmarkNetwork(input_h, model_h)
     return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
@@ -27,7 +27,7 @@ def benchmark_conv(in_shape, shape=(32, 64), k=3, stride=1):
     input_h = RandomInputHandler(in_shape, device=device)
     model_h = Conv2dBaseline(shape, kernel=k, device=device)
     benchmark = BenchmarkNetwork(input_h, model_h)
-    return benchmark.benchmark(maxiter=40, save_profiler_data=True, print_profiler_data=False)
+    return benchmark.benchmark(maxiter=40, save_profiler_data=False, print_profiler_data=False)
 
 
 
