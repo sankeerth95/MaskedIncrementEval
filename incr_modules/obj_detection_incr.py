@@ -43,7 +43,7 @@ class DenseObjectDetIncr(nn.Module):
                 nnBatchNorm2dIncr(out_c),
                 nnReluIncr(),
                 nnMaxPool2dIncr(kernel_size=self.kernel_size, stride=2),
-                KFencedMaskModule()
+                # KFencedMaskModule(0.1)
             )
         else:
             return nnSequentialIncr(

@@ -14,6 +14,7 @@ from torch.profiler import profile, record_function, ProfilerActivity
 
 import mlflow
 from ev_projs.event_flow.utils.utils import load_model
+from ev_projs.rpg_e2depth.utils.timers import CudaTimer
 from incr_modules.evflownet_incr import MultiResUNetRecurrentIncr
 
 if __name__ == "__main__":
@@ -39,7 +40,7 @@ if __name__ == "__main__":
 
     # launch testing
     
-    aee_measurement = False    
+    aee_measurement = False
     if aee_measurement:
         test(args, YAMLParser(args.config))
         exit()
@@ -58,6 +59,7 @@ if __name__ == "__main__":
         mlflow.set_tracking_uri(args.path_mlflow)
         run = mlflow.get_run(args.runid)
         config = yamlconfig.merge_configs(run.data.params)        
+        print(config)
         dataset = H5Loader(config, config["model"]["num_bins"])
 
     dataloader = torch.utils.data.DataLoader(
@@ -74,32 +76,38 @@ if __name__ == "__main__":
     model = MultiResUNetRecurrentIncr().to(device)
     model.load_state_dict(model1.multires_unetrec.state_dict())
 
+    torch.save(model.state_dict(), '/home/sankeerth/ev/sevcnn/pretrained/recevflownet_epoch149.pth')
 
     with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
         for i_batch, inputs in enumerate(dataloader):
 
-            if i_batch == 40:
+            if i_batch == 100:
                 break
 
             with torch.no_grad():
                 event_voxels = inputs["event_voxel"].to(device, memory_format=torch.channels_last)
                 event_cnt = inputs["event_cnt"].to(device=device, memory_format=torch.channels_last)
 
-                if i_batch%40 == 0:
-                    with record_function("model_inference_base"):
+                if i_batch%100 == 0:
+                    with CudaTimer('model inference base'):
+                        with record_function("model_inference_base"):
+                            torch.cuda.synchronize()
                         # model_output = model(
                         #     event_voxels, event_cnt, log=config["vis"]["activity"]
                         # )
-                        model_output = model.forward_refresh_reservoirs(
-                            event_cnt
-                        )
+                            model_output = model.forward_refresh_reservoirs(event_cnt)
+                            torch.cuda.synchronize()
+
                 else:
                     event_voxel_incr = (event_voxels-event_voxels_prev).to(memory_format=torch.channels_last)
                     event_cnt_incr = (event_cnt-event_cnt_prev).to(memory_format=torch.channels_last)
                     print(event_cnt_incr.count_nonzero(), event_cnt.numel())
 
-                    with record_function("model_inference"):
-                        preds = model((event_cnt_incr, None))
+                    with CudaTimer('model inference'):
+                        with record_function("model_inference"):
+                            torch.cuda.synchronize()
+                            preds = model((event_cnt_incr, None))
+                            torch.cuda.synchronize()
 
                     model_output += preds[-1][0]
 

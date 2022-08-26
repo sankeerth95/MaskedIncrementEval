@@ -50,7 +50,7 @@ if __name__ == '__main__':
 
         for i_batch, sample_batched in enumerate(val_loader):
 
-            if i_batch == 40:
+            if i_batch == 100:
                 break
 
             if continuous_dataset:
@@ -68,7 +68,7 @@ if __name__ == '__main__':
             histogram = F.interpolate(histogram.permute(0, 3, 1, 2), torch.Size(model_input_size))
 
             with torch.no_grad():
-                if i_batch%20 == 0:
+                if i_batch%100 == 0:
                     print('refresh: ', torch.count_nonzero(histogram))
                     with record_function("model_inference_base"):
                         model_output = model.forward_refresh_reservoirs(histogram)
@@ -96,8 +96,6 @@ if __name__ == '__main__':
 
     # print(model_output)
     print(prof.key_averages().table(sort_by="{}_time_total".format(device), row_limit=30))
-
-
 
     write=True
     if write:

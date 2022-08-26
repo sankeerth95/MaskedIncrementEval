@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import ext.pointops.pointops_functional as pf
-from incr_modules.utils import print_sparsity
+from incr_modules.utils import count_ops, print_sparsity
 
 from .masked_types import Masked, DenseT
 from .mask_incr_functional import IncrPointwiseMultiply, IncrementReserve, bn2d_from_module, conv2d_from_module
@@ -19,14 +19,14 @@ class IncrementMaskModule(nn.Module):
 
 # filter: only allow significant elements to pass through
 class KFencedMaskModule(IncrementMaskModule):
-    def __init__(self, k: float=1.1, field=3):
+    def __init__(self, tp: float=.1):
         super().__init__()
         # internally defined reserves
-        self.in_reserve = IncrementReserve()
+        # self.in_reserve = IncrementReserve()
         self.delta = IncrementReserve() # input tensor dimensions: dense tensor
 
-        self.field = field
-        self.k = k
+        self.tp = tp
+        self.k = tp
 
     def floor_by_k(self, T: Masked) -> Masked:  # TODO: implement for sparse inputs.
         return (self.k*torch.floor(0.5 + T/self.k))  
@@ -37,11 +37,12 @@ class KFencedMaskModule(IncrementMaskModule):
         T1 = self.delta.reservoir + incr[0]                 # critical path; could be sparse
         f_delta = self.floor_by_k(T1)                   # critical path; could be sparse
         self.delta.update_reservoir(T1 - f_delta)                       # out of order; sparse
-        self.in_reserve.accumulate(f_delta)         # out of order; sparse: conditional: doesn't need to be done
+        # self.in_reserve.accumulate(f_delta)         # out of order; sparse: conditional: doesn't need to be done
         return f_delta, None
 
     def forward_refresh_reservoirs(self, x: DenseT) -> DenseT:
-        self.in_reserve.update_reservoir(x)
+        self.k = self.tp*torch.norm(x)
+        # self.in_reserve.update_reservoir(x)
         self.delta.update_reservoir(torch.zeros_like(x))
         return x
 
@@ -153,7 +154,7 @@ class nnConvIncr(nn.Conv2d):
                  bias=True):
         nn.Conv2d.__init__(self, in_channels, out_channels, kernel_size, stride, padding, bias=bias)
         self.conv2d_weights = pf.convert_filter_out_channels_last(self.weight).cuda()
-        self.kf = KFencedMaskModule()
+        self.kf = KFencedMaskModule(0.3)
 
     def load_state_dict(self, state_dict: 'OrderedDict[str, torch.Tensor]',
                         strict: bool = True):
@@ -163,16 +164,16 @@ class nnConvIncr(nn.Conv2d):
     def forward(self, x_incr):
         # print('x_incr: ', x_incr.shape)
         # x_incr = self.kf(x_incr)
-
-        print_sparsity(x_incr, "conv: {}".format(self.weight.shape[2]) )
-
-        if x_incr[0].is_contiguous():
-            raise AssertionError('received non NHWC tensor')
-        if self.padding[0] != (self.conv2d_weights.shape[1] - 1 ) // 2:
+        # print_sparsity(x_incr[0], "conv: {}".format(self.weight.shape[2]) )
+        # if self.stride[0] == 1:
+        #     print(x_incr[0].shape, [self.in_channels, self.out_channels],self.kernel_size)
+        count_ops(x_incr[0], self.kernel_size[0])
+        # if x_incr[0].is_contiguous():
+        #     raise AssertionError('received non NHWC tensor')
+        if True or self.padding[0] != (self.conv2d_weights.shape[1] - 1 ) // 2:
             # fallback
             out = F.conv2d(x_incr[0], self.weight, bias=None, padding=self.padding, stride=self.stride)
-            return out, None
-
+            return [out, None]
         return conv2d_from_module(x_incr, self.conv2d_weights, stride=self.stride, padding=self.padding)
 
 
@@ -184,7 +185,12 @@ class nnConvIncr(nn.Conv2d):
         # batches = x.shape[0]
         # output_= torch.empty((batches, out_C, out_H, out_W), dtype=torch.float, device='cuda')
         # return output_
-        # x = self.kf.forward_refresh_reservoirs(x)
+        # count_ops(x)
+
+        # print_sparsity([x, None], "conv: {}".format(self.weight.shape[2]) )
+        x = self.kf.forward_refresh_reservoirs(x)
+        print_sparsity(x, "conv: {}".format(self.weight.shape[2]) )
+
         return super().forward(x)
 
 

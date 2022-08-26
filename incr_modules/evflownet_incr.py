@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from incr_modules.mask_incr_functional import IncrPointwiseMultiply
 
 from incr_modules.mask_incr_modules import nnBatchNorm2dIncr, nnConvIncr, nnReservedActivation, nnReservedMultiplication, nnSigmoidIncr, nnTanhIncr
 
@@ -109,11 +108,13 @@ class ConvLayerIncr(nn.Module):
         norm=None,
         BN_momentum=0.1,
         w_scale=None,
+        padding=None
     ):
         super(ConvLayerIncr, self).__init__()
 
         bias = False if norm == "BN" else True
-        padding = kernel_size // 2
+        if padding == None:
+            padding = kernel_size // 2
         self.conv2d = nnConvIncr(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
         if w_scale is not None:
             nn.init.uniform_(self.conv2d.weight, -w_scale, w_scale)
@@ -299,12 +300,14 @@ class UpsampleConvLayerIncr(nn.Module):
         kernel_size,
         stride=1,
         activation="relu",
+        padding = None,
         norm=None,
     ):
         super(UpsampleConvLayerIncr, self).__init__()
 
         bias = False if norm == "BN" else True
-        padding = kernel_size // 2
+        if padding is None:
+            padding = kernel_size // 2
         self.conv2d = nnConvIncr(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
 
         if activation is not None:
@@ -444,7 +447,6 @@ class MultiResUNetRecurrentIncr(nn.Module):
         return decoders
 
     def forward(self, x_incr):
-
 
         states_incr = [None] * self.num_states
         # encoder

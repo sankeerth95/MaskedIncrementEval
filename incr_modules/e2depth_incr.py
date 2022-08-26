@@ -15,7 +15,6 @@ class ConvLayerIncr(nn.Module):
 
         bias = False if norm == 'BN' else True
         self.conv2d = nnConvIncr(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
-        self.kf = KFencedMaskModule()
         if activation is not None:
             op = getattr(torch, activation, 'relu')
             self.activation = nnReservedActivation(op)
@@ -32,7 +31,7 @@ class ConvLayerIncr(nn.Module):
     # fully connected implementation
     def forward(self, x_incr: Masked) -> Masked:
         out_incr = self.conv2d(x_incr)
-        out_incr = self.kf(out_incr)
+        # out_incr = self.kf(out_incr)
         if self.norm == ['BN', 'IN']:
             out_incr = self.norm_layer(out_incr)
 
@@ -43,7 +42,6 @@ class ConvLayerIncr(nn.Module):
 
     def forward_refresh_reservoirs(self, x: DenseT):
         out = self.conv2d.forward_refresh_reservoirs(x)
-        out = self.kf.forward_refresh_reservoirs(out)
         if self.norm in ['BN', 'IN']:
             out = self.norm_layer.forward_refresh_reservoirs(out)
 
@@ -67,7 +65,6 @@ class ConvLSTMIncr(nn.Module):
 
         # convfilter:
         self.Gates = nnConvIncr(input_size + hidden_size, 4 * hidden_size, kernel_size, padding=pad)
-        self.kf = KFencedMaskModule()
 
         self.m1 = nnReservedMultiplication()
         self.m2 = nnReservedMultiplication()
@@ -92,8 +89,8 @@ class ConvLSTMIncr(nn.Module):
             if state_size not in self.zero_tensors_incr:
                 # allocate a tensor with size `spatial_size`, filled with zero (if it has not been allocated already)
                 self.zero_tensors_incr[state_size] = (
-                    (torch.zeros(state_size, device=input_incr[0].device).to(memory_format=torch.channels_last), None),
-                    (torch.zeros(state_size, device=input_incr[0].device).to(memory_format=torch.channels_last), None)
+                    [torch.zeros(state_size, device=input_incr[0].device).to(memory_format=torch.channels_last), None],
+                    [torch.zeros(state_size, device=input_incr[0].device).to(memory_format=torch.channels_last), None]
                 )
 
             prev_state_incr = self.zero_tensors_incr[state_size]
@@ -102,7 +99,6 @@ class ConvLSTMIncr(nn.Module):
 
         stacked_inputs_incr = torch.cat((input_incr[0], prev_h_incr[0]), 1), None
         gates_incr = self.Gates(stacked_inputs_incr)
-        gates_incr = self.kf(gates_incr)
 
         in_gate, remember_gate, out_gate, cell_gate = gates_incr[0].chunk(4, 1)
 
@@ -151,7 +147,6 @@ class ConvLSTMIncr(nn.Module):
         stacked_inputs = torch.cat((input_, prev_h), 1)
         gates = self.Gates.forward_refresh_reservoirs(stacked_inputs)
 
-        gates = self.kf.forward_refresh_reservoirs(gates)
         # chunk across channel dimension
         in_gate, remember_gate, out_gate, cell_gate = gates.chunk(4, 1)
 
@@ -196,7 +191,6 @@ class ResidualBlockIncr(nn.Module):
         super().__init__()
         bias = False if norm == 'BN' else True
         self.conv1 = nnConvIncr(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=bias)
-        self.kf1 = KFencedMaskModule()
         self.norm = norm
         if norm == 'BN':
             self.bn1 = nnBatchNorm2dIncr(out_channels)
@@ -207,19 +201,16 @@ class ResidualBlockIncr(nn.Module):
 
         self.conv2 = nnConvIncr(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=bias)
         self.relu2 = nnReluIncr()
-        self.kf2 = KFencedMaskModule()
 
         self.downsample = downsample
 
     def forward(self, x_incr: Masked) -> Masked:
         residual_incr = x_incr
         out_incr = self.conv1(x_incr)
-        out_incr = self.kf1(out_incr)
         if self.norm in ['BN', 'IN']:
             out_incr = self.bn1(out_incr)
         out_incr = self.relu1(out_incr)
         out_incr = self.conv2(out_incr)
-        out_incr = self.kf2(out_incr)
         if self.norm in ['BN', 'IN']:
             out_incr = self.bn2(out_incr)
 
@@ -234,12 +225,10 @@ class ResidualBlockIncr(nn.Module):
     def forward_refresh_reservoirs(self, x):
         residual = x
         out = self.conv1.forward_refresh_reservoirs(x)
-        out = self.kf1.forward_refresh_reservoirs(out)
         if self.norm in ['BN', 'IN']:
             out = self.bn1(out)
         out = self.relu1.forward_refresh_reservoirs(out)
         out = self.conv2.forward_refresh_reservoirs(out)        
-        out = self.kf2.forward_refresh_reservoirs(out)
         if self.norm in ['BN', 'IN']:
             out = self.bn2(out)
 
@@ -298,7 +287,6 @@ class UpsampleConvLayerIncr(nn.Module):
 
         bias = False if norm == 'BN' else True
         self.conv2d = nnConvIncr(in_channels, out_channels, kernel_size, stride, padding, bias=bias)
-        self.kf = KFencedMaskModule()
         if activation is not None:
             op = getattr(torch, activation, 'relu')
             self.activation = nnReservedActivation(op)
@@ -315,7 +303,6 @@ class UpsampleConvLayerIncr(nn.Module):
     def forward(self, x_incr: Masked) -> Masked:
         x_upsampled_incr = interpolate_from_module(x_incr)
         out_incr = self.conv2d(x_upsampled_incr)
-        out_incr = self.kf(out_incr)
 
         if self.norm in ['BN', 'IN']:
             out_incr = self.norm_layer(out_incr)
@@ -327,7 +314,6 @@ class UpsampleConvLayerIncr(nn.Module):
     def forward_refresh_reservoirs(self, x):
         x_upsampled = F.interpolate(x, scale_factor=2, mode='bilinear', align_corners=False)
         out = self.conv2d.forward_refresh_reservoirs(x_upsampled)
-        out = self.kf.forward_refresh_reservoirs(out)
         if self.norm in ['BN', 'IN']:
             out = self.norm_layer.forward_refresh_reservoirs(out)
 

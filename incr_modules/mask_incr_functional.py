@@ -58,7 +58,7 @@ def IncrPointwiseMultiply(x1_incr: Masked, x1: IncrementReserve, x2_incr: Masked
 
 
 def conv2d_from_module(x: Masked, conv_weights, stride=(1,1), padding=(1, 1)) -> Masked:
-        return pf.functional_conv_module(x[0], conv_weights, mask=x[1], stride=stride, padding=padding)
+    return pf.functional_conv_module(x[0], conv_weights, mask=x[1], stride=stride, padding=padding)
 
 
 def transposed_conv2d_from_module(x: Masked, gates: nn.ConvTranspose2d, bias=True) -> Masked:
@@ -70,12 +70,12 @@ def bn2d_from_module(x: Masked, bnm: nn.BatchNorm2d) -> Masked:
     # out1 = x[0]
     out1 = F.batch_norm(x[0], running_mean=torch.zeros_like(bnm.running_mean), \
         running_var=bnm.running_var, weight=bnm.weight, training=False, momentum=bnm.momentum, eps=bnm.eps)
-    return out1, torch.ones_like(out1, dtype=bool)
+    return out1, None
 
 
 def interpolate_from_module(x: Masked) -> Masked:
     out1 = F.interpolate(x[0], scale_factor=2, mode='bilinear', align_corners=False)
-    return out1, torch.ones_like(out1, dtype=bool)
+    return out1, None
 
 
 

@@ -14,7 +14,7 @@ from ev_projs.rpg_e2depth.options.inference_options import set_depth_inference_o
 if __name__ == '__main__':
     device='cuda'
     visualize=False
-    continuous_data = True
+    continuous_data = False
 
     width, height = 346, 260
     base_folder = '/home/sankeerth/ev/depth_proj/data/test/'
@@ -26,7 +26,8 @@ if __name__ == '__main__':
         dataset = VoxelGridDataset(base_folder, 'events/voxels', transform=None, normalize=False)
 
     pth = '/home/sankeerth/ev/experiments/pretrained_models/E2DEPTH_si_grad_loss_mixed.pth.tar'    
-    model = load_model_incr(pth).to(device).eval()
+    model = load_model_incr(pth).to(device)
+    model.eval()
 
     if visualize:
         # for visualize 
@@ -40,7 +41,7 @@ if __name__ == '__main__':
         class options:
             hot_pixels_file=None
             flip = False
-            no_normalize=False
+            no_normalize=True
             no_recurrent=False
             use_gpu=True
             output_folder=None
@@ -52,19 +53,23 @@ if __name__ == '__main__':
 
 
         with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
-
             with torch.no_grad():
-                for i in range(20):
+
+                for i in range(100):
                     event_tensor = get_data_i(i)
 
-                    if i % 20 == 0:
+                    if i % 100 == 0:
                         with record_function("model_inference_base"):
                             c,h = model.forward_refresh_reservoirs(event_tensor, None)
                         event_tensor_prev = event_tensor
                     else:
                         x = (event_tensor - event_tensor_prev).to(memory_format=torch.channels_last)
+                        print(x.count_nonzero(), x.numel())
                         with record_function("model_inference"):
+                            torch.cuda.synchronize()
                             c_incr, h_incr = model((x, None), None)
+                            torch.cuda.synchronize()
+
                         event_tensor_prev = event_tensor
                         c += c_incr[0]
     
