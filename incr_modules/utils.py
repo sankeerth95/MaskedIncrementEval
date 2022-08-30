@@ -6,8 +6,10 @@ from metrics.structural_sparsity import field_channel_sparsity
 total_ops = 0
 def print_sparsity(x, prefix: str = ""):
     # total_ops += (x[0].numel()*3)
-    print(prefix, torch.norm(x) )
-    # print(prefix, float(field_channel_sparsity(x[0], field_size=1, threshold=0.0001).cpu().numpy()))
+    # torch.linalg.norm(x)/torch.numel(x)
+    print(prefix, torch.linalg.norm(x)/torch.numel(x) )
+    print(prefix, float(field_channel_sparsity(x[0], field_size=3, threshold=0.1).cpu().numpy()))
+
 
 def count_ops(x: Masked, ksize):
     global total_ops

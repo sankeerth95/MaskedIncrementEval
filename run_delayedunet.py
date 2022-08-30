@@ -17,6 +17,8 @@ from incr_modules.delayedevflownet_incr import DelayedEVFlowNetIncr
 
 import subprocess
 
+from incr_modules.utils import print_sparsity
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
@@ -70,7 +72,7 @@ if __name__ == "__main__":
         worker_init_fn=config_parser.worker_init_fn,
         **kwargs
     )
-    _v = torch.ones([10]).cuda() # initialize
+
     with profile(activities=[ProfilerActivity.CUDA, ProfilerActivity.CPU], with_stack=True) as prof:
         for i_batch, inputs in enumerate(dataloader):
 
@@ -82,7 +84,7 @@ if __name__ == "__main__":
                 event_voxels = inputs["inp_voxel"].to(device, memory_format=torch.channels_last)
                 event_cnt = inputs["inp_cnt"].to(device=device, memory_format=torch.channels_last)
 
-                if i_batch%20 == 0:
+                if i_batch%100 == 0:
                     torch.cuda.synchronize()
                     with CudaTimer('model inference base'):
                         with record_function("model_inference_base"):
@@ -95,7 +97,7 @@ if __name__ == "__main__":
                 else:
                     event_voxel_incr = (event_voxels-event_voxels_prev).to(memory_format=torch.channels_last)
                     event_cnt_incr = (event_cnt-event_cnt_prev).to(memory_format=torch.channels_last)
-                    print(event_cnt_incr.count_nonzero(), event_cnt.numel())
+                    print_sparsity(event_voxel_incr, "input sp")
 
                     torch.cuda.synchronize()
                     with CudaTimer('model inference'):

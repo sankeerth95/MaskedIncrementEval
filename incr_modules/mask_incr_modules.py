@@ -167,7 +167,9 @@ class nnConvIncr(nn.Conv2d):
         # print_sparsity(x_incr[0], "conv: {}".format(self.weight.shape[2]) )
         # if self.stride[0] == 1:
         #     print(x_incr[0].shape, [self.in_channels, self.out_channels],self.kernel_size)
-        count_ops(x_incr[0], self.kernel_size[0])
+        
+        # count_ops(x_incr[0], self.kernel_size[0])
+        
         # if x_incr[0].is_contiguous():
         #     raise AssertionError('received non NHWC tensor')
         if True or self.padding[0] != (self.conv2d_weights.shape[1] - 1 ) // 2:
@@ -189,7 +191,7 @@ class nnConvIncr(nn.Conv2d):
 
         # print_sparsity([x, None], "conv: {}".format(self.weight.shape[2]) )
         x = self.kf.forward_refresh_reservoirs(x)
-        print_sparsity(x, "conv: {}".format(self.weight.shape[2]) )
+        # print_sparsity(x, "conv: {}".format(self.weight.shape[2]) )
 
         return super().forward(x)
 

@@ -189,10 +189,15 @@ class DelayedMultiResUNetIncr(BaseUNet):
         return encoders
 
     def build_delayed_prediction_layer(self):
-        # 2 is the number of channel for prediction at each level
-        delayed_prediction_input_channel = sum(self.encoder_input_sizes) + 2 * self.num_encoders
+        # the delayed prediction layer takes in all output from the decoders (except the smallest spatial resolution)
+        # + all output from predictions at all resolution levels
+        delayed_prediction_input_channel = sum(self.encoder_input_sizes[:-1]) + 2 * self.num_encoders
+
+        # the final prediction includes two layers
         delayed_pred_layer = nn.ModuleList()
+        # first, the layer with taking all decoder output + prediction as input, output base_num_channels
         delayed_pred_layer.append(ConvLayerIncr(delayed_prediction_input_channel, self.base_num_channels, 1, activation="relu", norm=self.norm))
+        # second, concat output from first conv layer with the predictions, output the final prediction
         delayed_pred_layer.append(ConvLayerIncr(self.base_num_channels + 2 * self.num_encoders, 2, 1, activation=self.final_activation, norm=self.norm))
         return delayed_pred_layer
 
@@ -225,6 +230,8 @@ class DelayedMultiResUNetIncr(BaseUNet):
 
     def forward(self, x):
 
+        highest_resolution_size = x[0].shape[-2:]
+
         # encoder
         blocks = []
         for i, encoder in enumerate(self.encoders):
@@ -238,44 +245,99 @@ class DelayedMultiResUNetIncr(BaseUNet):
             last_resblock_output = x
 
         # decoder with delayed concatenation
-        predictions = []
-        decoder_out_list = []
+        interpolated_predictions = []
+        interpolated_decoder_out_list = []
         for i, (decoder, pred) in enumerate(zip(self.decoders, self.preds)):
             if i == 0:
                 decoder_in = skip_concat_incr(last_resblock_output, blocks[self.num_encoders - i - 1])
             else:
                 decoder_in = blocks[self.num_encoders - i - 1]
             decoder_out = decoder(decoder_in)
-            decoder_out_list.append(decoder_out)
-            predictions.append(pred(decoder_out))
 
-        delayed_all_combined = decoder_out_list[-1][0]
-        for i, decoder_out in enumerate(reversed(decoder_out_list[:-1]), start=1):
-            delayed_all_combined = torch.cat((delayed_all_combined,
-                                              F.interpolate(decoder_out[0], size=(delayed_all_combined.shape[-2], delayed_all_combined.shape[-1]), mode="bilinear", align_corners=False)), dim=1)
 
-        delayed_all_combined = torch.cat((delayed_all_combined, predictions[-1][0]), dim=1)
-        for i, prediction in enumerate(reversed(predictions[:-1]), start=1):
-            delayed_all_combined = torch.cat((delayed_all_combined,
-                                              F.interpolate(prediction[0], size=(delayed_all_combined.shape[-2], delayed_all_combined.shape[-1]), mode="bilinear", align_corners=False)), dim=1)
-        
-        
-        delayed_pred = self.delayed_pred_layer_list[0]([delayed_all_combined, None])
-        delayed_pred = [torch.cat((delayed_pred[0], delayed_all_combined[:,-2*self.num_encoders:,:,:]), dim=1), None]
-        delayed_pred = self.delayed_pred_layer_list[1]([delayed_pred[0], None])
+            if i != 0:
+                # we do not use the lowest spatial resolution decoder's output in the final prediction
+                interpolated_decoder_out_list.append(
+                    F.interpolate(decoder_out[0], size=highest_resolution_size,
+                                  mode='bilinear', align_corners=False))
+            # we do use the lowest spatial resolution's prediction in the final prediction
+            raw_prediction = pred(decoder_out)
+            interpolated_predictions.append(
+                F.interpolate(raw_prediction[0], size=highest_resolution_size,
+                              mode='bilinear', align_corners=False))
 
-        # # decoder and multires predictions
-        # predictions = []
-        # for i, (decoder, pred) in enumerate(zip(self.decoders, self.preds)):
-        #     x = self.skip_ftn(x, blocks[self.num_encoders - i - 1])
-        #     if i > 0:
-        #         x = self.skip_ftn(predictions[-1], x)
-        #     x = decoder(x)
-        #     predictions.append(pred(x))
+        # concat on the channel dimension
+        delayed_prediction_in = [torch.cat(interpolated_decoder_out_list + interpolated_predictions, dim=1), None]
 
-        return predictions, delayed_pred
+        delayed_prediction_intermediate = self.delayed_pred_layer_list[0](delayed_prediction_in)
+
+        delayed_prediction_out = self.delayed_pred_layer_list[1](
+            [torch.cat([delayed_prediction_intermediate[0], delayed_prediction_in[0][:,-2*self.num_encoders:,:,:]], dim=1), 0]
+        )
+
+        return interpolated_predictions, delayed_prediction_out
+
+
+    def forward2(self, x):
+        """
+        :param x: N x num_input_channels x H x W
+        :return: [N x num_output_channels x H x W for i in range(self.num_encoders)]
+        """
+
+        highest_resolution_size = x.shape[-2:]
+
+        # encoder
+        blocks = []
+        for i, encoder in enumerate(self.encoders):
+            x = encoder(x)
+            blocks.append(x)
+
+        # residual blocks
+        last_resblock_output = None
+        for resblock in self.resblocks:
+            x, _ = resblock(x)
+            last_resblock_output = x
+
+        # decoder and multires predictions
+        interpolated_predictions = []
+        interpolated_decoder_out_list = []
+        for i, (decoder, pred) in enumerate(zip(self.decoders, self.preds)):
+
+            if i == 0:
+                # the lowest spatial resolution decoder's input is the concat of resblock output and encoder output
+                decoder_in = self.skip_ftn(last_resblock_output, blocks[self.num_encoders - i - 1])
+            else:
+                # other decoder's output is the corresponding spatial resolution's encoder output
+                decoder_in = blocks[self.num_encoders - i - 1]
+
+            decoder_out = decoder(decoder_in)
+            if i != 0:
+                # we do not use the lowest spatial resolution decoder's output in the final prediction
+                interpolated_decoder_out_list.append(
+                    F.interpolate(decoder_out, size=highest_resolution_size,
+                                  mode='bilinear', align_corners=False))
+            # we do use the lowest spatial resolution's prediction in the final prediction
+            raw_prediction = pred(decoder_out)
+            interpolated_predictions.append(
+                F.interpolate(raw_prediction, size=highest_resolution_size,
+                              mode='bilinear', align_corners=False))
+
+        # concat on the channel dimension
+        delayed_prediction_in = torch.cat(interpolated_decoder_out_list + interpolated_predictions, dim=1)
+
+        delayed_prediction_intermediate = self.delayed_pred_layer_list[0](delayed_prediction_in)
+
+        delayed_prediction_out = self.delayed_pred_layer_list[1](
+            torch.cat([delayed_prediction_intermediate, delayed_prediction_in[:,-2*self.num_encoders:,:,:]], dim=1)
+        )
+
+        return interpolated_predictions, delayed_prediction_out
+
+
 
     def forward_refresh_reservoirs(self, x):
+
+        highest_resolution_size = x.shape[-2:]
 
         # encoder
         blocks = []
@@ -290,32 +352,36 @@ class DelayedMultiResUNetIncr(BaseUNet):
             last_resblock_output = x
 
         # decoder with delayed concatenation
-        predictions = []
-        decoder_out_list = []
+        interpolated_predictions = []
+        interpolated_decoder_out_list = []
         for i, (decoder, pred) in enumerate(zip(self.decoders, self.preds)):
             if i == 0:
                 decoder_in = self.skip_ftn(last_resblock_output, blocks[self.num_encoders - i - 1])
             else:
                 decoder_in = blocks[self.num_encoders - i - 1]
             decoder_out = decoder.forward_refresh_reservoirs(decoder_in)
-            decoder_out_list.append(decoder_out)
-            predictions.append(pred.forward_refresh_reservoirs(decoder_out))
+            if i != 0:
+                # we do not use the lowest spatial resolution decoder's output in the final prediction
+                interpolated_decoder_out_list.append(
+                    F.interpolate(decoder_out, size=highest_resolution_size,
+                                  mode='bilinear', align_corners=False))
+            # we do use the lowest spatial resolution's prediction in the final prediction
+            raw_prediction = pred.forward_refresh_reservoirs(decoder_out)
+            interpolated_predictions.append(
+                F.interpolate(raw_prediction, size=highest_resolution_size,
+                              mode='bilinear', align_corners=False))
 
-        delayed_all_combined = decoder_out_list[-1]
-        for i, decoder_out in enumerate(reversed(decoder_out_list[:-1]), start=1):
-            scale_factor = 2 ** i
-            delayed_all_combined = torch.cat((delayed_all_combined,
-                                              F.interpolate(decoder_out, size=(delayed_all_combined.shape[-2], delayed_all_combined.shape[-1]), mode="bilinear", align_corners=False)), dim=1)
+        # concat on the channel dimension
+        delayed_prediction_in = torch.cat(interpolated_decoder_out_list + interpolated_predictions, dim=1)
 
-        delayed_all_combined = torch.cat((delayed_all_combined, predictions[-1]), dim=1)
-        for i, prediction in enumerate(reversed(predictions[:-1]), start=1):
-            scale_factor = 2 ** i
-            delayed_all_combined = torch.cat((delayed_all_combined,
-                                              F.interpolate(prediction, size=(delayed_all_combined.shape[-2], delayed_all_combined.shape[-1]), mode="bilinear", align_corners=False)), dim=1)
+        delayed_prediction_intermediate = self.delayed_pred_layer_list[0].forward_refresh_reservoirs(delayed_prediction_in)
 
-        delayed_pred = self.delayed_pred_layer_list[1].forward_refresh_reservoirs(torch.cat((self.delayed_pred_layer_list[0].forward_refresh_reservoirs(delayed_all_combined), delayed_all_combined[:,-2*self.num_encoders:,:,:]), dim=1))
+        delayed_prediction_out = self.delayed_pred_layer_list[1].forward_refresh_reservoirs(
+            torch.cat([delayed_prediction_intermediate, delayed_prediction_in[:,-2*self.num_encoders:,:,:]], dim=1)
+        )
 
-        return predictions, delayed_pred
+        return interpolated_predictions, delayed_prediction_out
+
 
 
 class DelayedEVFlowNetIncr(nn.Module):
@@ -371,43 +437,19 @@ class DelayedEVFlowNetIncr(nn.Module):
             x_incr = self.crop.pad(x_incr)
 
         # forward pass
-        multires_flow = self.multires_unet.forward(x_incr)
-        if isinstance(multires_flow, tuple):
-            assert len(multires_flow) == 2
-            delayed_flow = multires_flow[1]
-            multires_flow = multires_flow[0]
-        else:
-            delayed_flow = None
+        interpolated_multires_flow, delayed_flow = self.multires_unet.forward(x_incr)
+        interpolated_multires_flow.append(delayed_flow)
         
         # upsample flow estimates to the original input resolution
-        flow_list = []
-        for flow in multires_flow:
-            flow_list.append(
-                torch.nn.functional.interpolate(
-                    flow[0],
-                    scale_factor=(
-                        multires_flow[-1][0].shape[2] / flow[0].shape[2],
-                        multires_flow[-1][0].shape[3] / flow[0].shape[3],
-                    ),
-                )
-            )
-        if delayed_flow is not None:
-            flow_list.append(delayed_flow[0])
 
         # crop output
         if self.crop is not None:
-            for i, flow in enumerate(flow_list):
-                flow_list[i] = flow[:, :, self.crop.iy0 : self.crop.iy1, self.crop.ix0 : self.crop.ix1]
-                flow_list[i] = flow_list[i].contiguous()
+            for i, flow in enumerate(interpolated_multires_flow):
+                interpolated_multires_flow[i] = flow[:, :, self.crop.iy0 : self.crop.iy1, self.crop.ix0 : self.crop.ix1]
+                interpolated_multires_flow[i] = interpolated_multires_flow[i].contiguous()
 
-        # mask flow
-        if self.mask and False:
-            mask = torch.sum(inp_cnt, dim=1, keepdim=True)
-            mask[mask > 0] = 1
-            for i, flow in enumerate(flow_list):
-                flow_list[i] = flow * mask
 
-        return {"flow": flow_list}
+        return {"flow": interpolated_multires_flow}
 
 
     def forward_refresh_reservoirs(self, x):
@@ -422,41 +464,14 @@ class DelayedEVFlowNetIncr(nn.Module):
             x = self.crop.pad(x)
 
         # forward pass
-        multires_flow = self.multires_unet.forward_refresh_reservoirs(x)
-        if isinstance(multires_flow, tuple):
-            assert len(multires_flow) == 2
-            delayed_flow = multires_flow[1]
-            multires_flow = multires_flow[0]
-        else:
-            delayed_flow = None
-
-        # upsample flow estimates to the original input resolution
-        flow_list = []
-        for flow in multires_flow:
-            flow_list.append(
-                torch.nn.functional.interpolate(
-                    flow,
-                    scale_factor=(
-                        multires_flow[-1].shape[2] / flow.shape[2],
-                        multires_flow[-1].shape[3] / flow.shape[3],
-                    ),
-                )
-            )
-        if delayed_flow is not None:
-            flow_list.append(delayed_flow)
+        interpolated_multires_flow, delayed_flow = self.multires_unet.forward_refresh_reservoirs(x)
+        interpolated_multires_flow.append(delayed_flow)
 
         # crop output
         if self.crop is not None:
-            for i, flow in enumerate(flow_list):
-                flow_list[i] = flow[:, :, self.crop.iy0 : self.crop.iy1, self.crop.ix0 : self.crop.ix1]
-                flow_list[i] = flow_list[i].contiguous()
+            for i, flow in enumerate(interpolated_multires_flow):
+                interpolated_multires_flow[i] = flow[:, :, self.crop.iy0 : self.crop.iy1, self.crop.ix0 : self.crop.ix1]
+                interpolated_multires_flow[i] = interpolated_multires_flow[i].contiguous()
 
-        # mask flow
-        if self.mask and False:
-            mask = torch.sum(inp_cnt, dim=1, keepdim=True)
-            mask[mask > 0] = 1
-            for i, flow in enumerate(flow_list):
-                flow_list[i] = flow * mask
-
-        return {"flow": flow_list}
+        return {"flow": interpolated_multires_flow}
 
