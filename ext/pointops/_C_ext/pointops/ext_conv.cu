@@ -72,7 +72,7 @@ __global__ void conv_kxk_ext(
         scalar_t t_out[n_pixels_out]; // for each thread
         // const scalar_t t_bias = bias == nullptr || out_c >= out_C ? 0.0f : bias[out_c];
         for (int i = 0; i < n_pixels_out; ++i) {
-            s_mask[i] = 1u;
+            s_mask[i] = i%2; // cooperative fetching of the mask : 50% sparse mask test voer
         }
 
         #pragma unroll
@@ -132,11 +132,6 @@ __global__ void conv_kxk_ext(
                     const bool valid = in_c<in_C && in_y_im>=0 && in_x_im>=0 && in_y_im<in_H && in_x_im<in_W;// && is_px_mask_set<w_in, n_in_px>(in_x, in_y, t_mask, s_mask);
 
                     if (valid) {
-                        // if(in_y_im * in_row_vals + in_x_im * in_C + in_c >= in_H*in_C*in_W  || in_y_im * in_row_vals + in_x_im * in_C + in_c  < 0){
-                        //     printf("the illeal access  is: %d, %d, %d, %d, %d, %d\n", in_y_im * in_row_vals + in_x_im * in_C + in_c, in_y_im , in_row_vals , in_x_im , in_C , in_c );
-                        //     printf("in_y, tile_start_in_y, in_y_im: %d, %d, %d\n", in_y,  tile_start_in_y, in_y_im  );
-                        //     // exit(1);
-                        // }
                         s_in[in_y * w_in + in_x][lane_idx] = batch_in[in_y_im * in_row_vals + in_x_im * in_C + in_c];
                     } else {
                         s_in[in_y * w_in + in_x][lane_idx] = 0.0f;
@@ -159,47 +154,59 @@ __global__ void conv_kxk_ext(
                         }
                     }
 
+                    // printf("hin, win = %d %d\n", h_in, w_in);
                     // loop split this thing to tile and skip convolution
                     #pragma unroll
-                    for (int in_y = -K_HALF; in_y < h_in - K_HALF; ++in_y) {
+                    for (int in_y_outer = -K_HALF; in_y_outer < (h_in - K_HALF); in_y_outer+=4) {
                         #pragma unroll
-                        for (int in_x = -K_HALF; in_x < w_in - K_HALF; ++in_x) {
-                            const scalar_t val = s_in[(in_y+K_HALF) * w_in + (in_x+K_HALF)][in_c];
+                        for (int in_x_outer = -K_HALF; in_x_outer < (w_in - K_HALF); in_x_outer+=4) {
 
-                            // TODO try to skip pixels where mask is not set -> might be worth it in this 7x7 kernel
-                            const int min_f_y = -in_y;
-                            const int min_f_x = -in_x;
-                            const int max_f_y = h_in - in_y - KERNEL_SIZE;
-                            const int max_f_x = w_in - in_x - KERNEL_SIZE;                        
-                            const int stride_off_y = (((-in_y + K_HALF) % STRIDE) + STRIDE) % STRIDE;
-                            const int stride_off_x = (((-in_x + K_HALF) % STRIDE) + STRIDE) % STRIDE;
+                            if (!s_mask[(in_y_outer + K_HALF)*pixelsPerBlockX + (in_x_outer+K_HALF)]) // single element mask right now, but will this hold for entire slabs??
+                                continue;
+
                             #pragma unroll
-                            for (int f_y = Utils::constexpr_max(-K_HALF + stride_off_y, min_f_y); f_y <= Utils::constexpr_min(K_HALF, max_f_y); f_y += STRIDE) {
+                            for (int in_y = in_y_outer; in_y < Utils::constexpr_min(h_in - K_HALF, in_y_outer+4); ++in_y) {
                                 #pragma unroll
-                                for (int f_x = Utils::constexpr_max(-K_HALF + stride_off_x, min_f_x); f_x <= Utils::constexpr_min(K_HALF, max_f_x); f_x += STRIDE) {
+                                for (int in_x = in_x_outer; in_x < Utils::constexpr_max(w_in - K_HALF, in_x_outer+4); ++in_x) {
 
-                                    // printf("%d, %d\n", f_x, f_y);
+                                    const scalar_t val = s_in[(in_y+K_HALF) * w_in + (in_x+K_HALF)][in_c];
 
-                                    t_out[((in_y+f_y)/STRIDE) * pixelsPerBlockX + ((in_x+f_x)/STRIDE)] += val * t_f[(f_y+K_HALF)*KERNEL_SIZE + f_x+K_HALF];
+                                    // TODO try to skip pixels where mask is not set -> might be worth it in this 7x7 kernel
+                                    const int min_f_y = -in_y;
+                                    const int min_f_x = -in_x;
+                                    const int max_f_y = h_in - in_y - KERNEL_SIZE;
+                                    const int max_f_x = w_in - in_x - KERNEL_SIZE;                        
+                                    const int stride_off_y = (((-in_y + K_HALF) % STRIDE) + STRIDE) % STRIDE;
+                                    const int stride_off_x = (((-in_x + K_HALF) % STRIDE) + STRIDE) % STRIDE;
+                                    #pragma unroll
+                                    for (int f_y = Utils::constexpr_max(-K_HALF + stride_off_y, min_f_y); f_y <= Utils::constexpr_min(K_HALF, max_f_y); f_y += STRIDE) {
+                                        #pragma unroll
+                                        for (int f_x = Utils::constexpr_max(-K_HALF + stride_off_x, min_f_x); f_x <= Utils::constexpr_min(K_HALF, max_f_x); f_x += STRIDE) {
+
+                                            // printf("%d, %d\n", f_x, f_y);
+
+                                            t_out[((in_y+f_y)/STRIDE) * pixelsPerBlockX + ((in_x+f_x)/STRIDE)] += val * t_f[(f_y+K_HALF)*KERNEL_SIZE + f_x+K_HALF];
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
-        }
 
 
-        if (out_c < out_C) {
-            #pragma unroll
-            for (int out_y = 0; out_y < pixelsPerBlockY; ++out_y) {
-                const int out_y_im = out_y + tile_start_out_y;
+            if (out_c < out_C) {
                 #pragma unroll
-                for (int out_x = 0; out_x < pixelsPerBlockX; ++out_x) {
-                    const int out_x_im = out_x + tile_start_out_x;
-                    const bool valid = out_y_im < out_H && out_x_im < out_W;
-                    if (valid) {
-                        batch_out[(out_y_im * out_W + out_x_im) * out_C + out_c] = t_out[out_y*pixelsPerBlockX + out_x];
+                for (int out_y = 0; out_y < pixelsPerBlockY; ++out_y) {
+                    const int out_y_im = out_y + tile_start_out_y;
+                    #pragma unroll
+                    for (int out_x = 0; out_x < pixelsPerBlockX; ++out_x) {
+                        const int out_x_im = out_x + tile_start_out_x;
+                        const bool valid = out_y_im < out_H && out_x_im < out_W;
+                        if (valid) {
+                            batch_out[(out_y_im * out_W + out_x_im) * out_C + out_c] = t_out[out_y*pixelsPerBlockX + out_x];
+                        }
                     }
                 }
             }
